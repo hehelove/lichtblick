@@ -9,7 +9,6 @@ import * as _ from "lodash-es";
 import memoizeWeak from "memoize-weak";
 import { Writable } from "ts-essentials";
 
-import { filterMap } from "@lichtblick/den/collection";
 import { compare, toSec } from "@lichtblick/rostime";
 import {
   AppSettingValue,
@@ -33,10 +32,14 @@ import { HoverValue } from "@lichtblick/suite-base/types/hoverValue";
 import { InstalledMessageConverter } from "@lichtblick/suite-base/types/messageConverters";
 
 import {
+  collateTopicConverters,
   collateTopicSchemaConversions,
   convertMessage,
   forEachSortedArrays,
   mapDifference,
+  runTopicConverters,
+  TopicConverter,
+  TopicConverterCollation,
   TopicSchemaConversions,
 } from "./messageProcessing";
 import type { MessageConverterAlertHandler } from "./types";
@@ -87,12 +90,21 @@ function initRenderStateBuilder(): BuildRenderStateFn {
   let prevSharedPanelState: BuilderRenderStateInput["sharedPanelState"];
   let prevCurrentFrame: Immutable<RenderState["currentFrame"]>;
   let prevCollatedConversions: undefined | TopicSchemaConversions;
+  let prevTopicConverters: undefined | TopicConverterCollation;
   const lastMessageByTopic = new Map<string, MessageEvent>();
+
+  // Cache of create()-produced functions per topic converter. Cleared when the watched global
+  // variables or the converter set change so instances are rebuilt with fresh variables.
+  let topicConverterFns = new Map<
+    Immutable<TopicConverter>,
+    (event: Immutable<MessageEvent>) => unknown
+  >();
 
   // Pull these memoized versions into the closure so they are scoped to the lifetime of
   // the panel.
   const memoMapDifference = memoizeWeak(mapDifference);
   const memoCollateTopicSchemaConversions = memoizeWeak(collateTopicSchemaConversions);
+  const memoCollateTopicConverters = memoizeWeak(collateTopicConverters);
 
   const prevRenderState: Writable<Immutable<RenderState>> = {};
 
@@ -155,7 +167,18 @@ function initRenderStateBuilder(): BuildRenderStateFn {
       prevCollatedConversions?.topicSchemaConverters,
     );
 
+    // Topic converters (Foxglove-style inputTopics -> virtual outputTopic). Memoized on the
+    // converter set; identity change signals we must rebuild cached create() instances.
+    const topicConverters = memoCollateTopicConverters(messageConverters);
+    const topicConvertersChanged = prevTopicConverters !== topicConverters;
+
     const variablesChanged = globalVariables !== prevVariables;
+
+    // Rebuild cached topic-converter instances when the converter set or watched globals change.
+    if (topicConvertersChanged || variablesChanged) {
+      topicConverterFns = new Map();
+    }
+    const globalVariablesReadonly = { ...globalVariables } as Readonly<GlobalVariables>;
 
     if (prevSeekTime !== activeData?.lastSeekTime) {
       lastMessageByTopic.clear();
@@ -227,6 +250,19 @@ function initRenderStateBuilder(): BuildRenderStateFn {
           return newTopic;
         });
 
+        // Expose virtual topics produced by topic converters, but only when at least one of their
+        // input topics is present in the data source (otherwise the converter can never produce
+        // anything). Skip if a real topic with the same name already exists.
+        for (const converter of topicConverters.byOutput.values()) {
+          const hasInput = converter.inputTopics.some(
+            (inputTopic) => topicToSchemaNameMap[inputTopic] != undefined,
+          );
+          if (!hasInput || topics.some((topic) => topic.name === converter.outputTopic)) {
+            continue;
+          }
+          topics.push({ name: converter.outputTopic, schemaName: converter.outputSchemaName });
+        }
+
         renderState.topics = topics;
         prevSortedTopics = sortedTopics;
       }
@@ -256,11 +292,19 @@ function initRenderStateBuilder(): BuildRenderStateFn {
               { emitAlert },
             );
           }
+          runTopicConverters(
+            { ...messageEvent, topicConfig: configTopics[messageEvent.topic] },
+            topicConverters.byInput,
+            topicConverterFns,
+            postProcessedFrame,
+            globalVariablesReadonly,
+            { emitAlert },
+          );
           lastMessageByTopic.set(messageEvent.topic, messageEvent);
         }
         renderState.currentFrame = postProcessedFrame;
         shouldRender.value = true;
-      } else if (conversionsChanged) {
+      } else if (conversionsChanged || topicConvertersChanged) {
         // If we don't have a new frame but our conversions have changed, run
         // only the new conversions on our most recent message on each topic.
         const postProcessedFrame: MessageEvent[] = [];
@@ -275,6 +319,14 @@ function initRenderStateBuilder(): BuildRenderStateFn {
               { emitAlert },
             );
           }
+          runTopicConverters(
+            { ...messageEvent, topicConfig: configTopics[messageEvent.topic] },
+            topicConverters.byInput,
+            topicConverterFns,
+            postProcessedFrame,
+            globalVariablesReadonly,
+            { emitAlert },
+          );
         }
         renderState.currentFrame = postProcessedFrame;
         shouldRender.value = true;
@@ -293,6 +345,14 @@ function initRenderStateBuilder(): BuildRenderStateFn {
               { emitAlert },
             );
           }
+          runTopicConverters(
+            { ...messageEvent, topicConfig: configTopics[messageEvent.topic] },
+            topicConverters.byInput,
+            topicConverterFns,
+            postProcessedFrame,
+            globalVariablesReadonly,
+            { emitAlert },
+          );
         }
         renderState.currentFrame = postProcessedFrame;
         shouldRender.value = true;
@@ -309,16 +369,32 @@ function initRenderStateBuilder(): BuildRenderStateFn {
     if (watchedFields.has("allFrames")) {
       // Rebuild allFrames if we have new blocks or if our conversions have changed.
       const newBlocks = playerState?.progress.messageCache?.blocks;
-      if ((newBlocks != undefined && prevBlocks !== newBlocks) || conversionsChanged) {
+      if (
+        (newBlocks != undefined && prevBlocks !== newBlocks) ||
+        conversionsChanged ||
+        topicConvertersChanged
+      ) {
         shouldRender.value = true;
         const blocksToProcess = newBlocks ?? prevBlocks ?? [];
         const frames: MessageEvent[] = (renderState.allFrames = []);
-        // only populate allFrames with topics that the panel wants to preload
-        const topicsToPreloadForPanel = Array.from(
-          new Set<string>(
-            filterMap(subscriptions, (sub) => (sub.preload === true ? sub.topic : undefined)),
-          ),
-        );
+        // only populate allFrames with topics that the panel wants to preload. For a preload
+        // subscription to a topic-converter outputTopic, preload its inputTopics instead (the
+        // outputTopic is virtual and produced from those inputs).
+        const preloadTopics = new Set<string>();
+        for (const sub of subscriptions) {
+          if (sub.preload !== true) {
+            continue;
+          }
+          const converter = topicConverters.byOutput.get(sub.topic);
+          if (converter) {
+            for (const inputTopic of converter.inputTopics) {
+              preloadTopics.add(inputTopic);
+            }
+          } else {
+            preloadTopics.add(sub.topic);
+          }
+        }
+        const topicsToPreloadForPanel = Array.from(preloadTopics);
 
         for (const block of blocksToProcess) {
           if (!block) {
@@ -351,6 +427,14 @@ function initRenderStateBuilder(): BuildRenderStateFn {
                   { emitAlert },
                 );
               }
+              runTopicConverters(
+                { ...messageEvent, topicConfig: configTopics[messageEvent.topic] },
+                topicConverters.byInput,
+                topicConverterFns,
+                frames,
+                globalVariablesReadonly,
+                { emitAlert },
+              );
             },
           );
         }
@@ -422,6 +506,7 @@ function initRenderStateBuilder(): BuildRenderStateFn {
     // Several of the watch steps depend on the comparison against prev and new values
     prevMessageConverters = messageConverters;
     prevCollatedConversions = collatedConversions;
+    prevTopicConverters = topicConverters;
     prevVariables = globalVariables;
 
     if (!shouldRender.value) {

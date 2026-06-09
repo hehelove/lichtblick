@@ -89,6 +89,84 @@ export function convertMessage(
 }
 
 /**
+ * Run any topic converters whose inputTopics include this message's topic, pushing the produced
+ * virtual-topic messages into `convertedMessages`. The `converterFns` map caches the per-converter
+ * function returned by `create(globalVariables)`; callers must clear it when the watched global
+ * variables (or the converter set) change so instances are rebuilt with fresh variables.
+ */
+export function runTopicConverters(
+  messageEvent: Immutable<MessageEvent>,
+  byInput: Map<string, Immutable<TopicConverter>[]>,
+  converterFns: Map<Immutable<TopicConverter>, (event: Immutable<MessageEvent>) => unknown>,
+  convertedMessages: MessageEvent[],
+  globalVariables?: Readonly<GlobalVariables>,
+  context?: ConvertMessageContext,
+): void {
+  const matched = byInput.get(messageEvent.topic);
+  if (!matched) {
+    return;
+  }
+  for (const converter of matched) {
+    let fn = converterFns.get(converter);
+    if (!fn) {
+      try {
+        fn = converter.create(globalVariables);
+      } catch (e) {
+        emitConverterError(converter, messageEvent, e, context);
+        continue;
+      }
+      converterFns.set(converter, fn);
+    }
+
+    let result: unknown;
+    try {
+      result = fn(messageEvent);
+    } catch (e) {
+      emitConverterError(converter, messageEvent, e, context);
+      continue;
+    }
+
+    // A converter may return undefined/null (skip), a single message, or an array of messages.
+    if (result == undefined) {
+      continue;
+    }
+    const produced = Array.isArray(result) ? result : [result];
+    for (const message of produced) {
+      if (message == undefined) {
+        continue;
+      }
+      convertedMessages.push({
+        topic: converter.outputTopic,
+        schemaName: converter.outputSchemaName,
+        receiveTime: messageEvent.receiveTime,
+        message,
+        originalMessageEvent: messageEvent,
+        sizeInBytes: messageEvent.sizeInBytes,
+        topicConfig: messageEvent.topicConfig,
+      });
+    }
+  }
+}
+
+function emitConverterError(
+  converter: Immutable<TopicConverter>,
+  messageEvent: Immutable<MessageEvent>,
+  e: unknown,
+  context?: ConvertMessageContext,
+): void {
+  const error = e instanceof Error ? e : new Error(typeof e === "string" ? e : JSON.stringify(e));
+  context?.emitAlert?.(
+    converter as Immutable<InstalledMessageConverter>,
+    {
+      severity: "error",
+      message: `Uncaught error in topic converter (${converter.extensionId}) at ${formatTimeRaw(messageEvent.receiveTime)}`,
+      error,
+    },
+    `topicConverterError-${converter.extensionId}-${converter.outputTopic}`,
+  );
+}
+
+/**
  * Returns a new map consisting of all items in `a` not present in `b`.
  */
 export function mapDifference<K, V>(a: Map<K, V[]>, b: undefined | Map<K, V[]>): Map<K, V[]> {
@@ -100,6 +178,71 @@ export function mapDifference<K, V>(a: Map<K, V[]>, b: undefined | Map<K, V[]>):
     }
   }
   return result;
+}
+
+/**
+ * A "topic converter" (Foxglove-style) reads one or more `inputTopics` and produces a brand new
+ * virtual `outputTopic`. Lichtblick's upstream runtime only implements schema converters
+ * (fromSchemaName -> toSchemaName on the same topic); this is the fork runtime support.
+ */
+export type TopicConverter = InstalledMessageConverter & {
+  type: "topic";
+  inputTopics: readonly string[];
+  outputTopic: string;
+  outputSchemaName: string;
+  create: (
+    globalVariables?: Readonly<GlobalVariables>,
+  ) => (event: Immutable<MessageEvent>) => unknown;
+};
+
+/** Type guard: a fully-formed topic converter (inputTopics -> outputTopic). */
+export function isTopicConverter(
+  converter: Immutable<InstalledMessageConverter>,
+): converter is Immutable<TopicConverter> {
+  const c = converter as Immutable<Partial<TopicConverter>>;
+  return (
+    c.type === "topic" &&
+    Array.isArray(c.inputTopics) &&
+    c.inputTopics.length > 0 &&
+    typeof c.outputTopic === "string" &&
+    typeof c.outputSchemaName === "string" &&
+    typeof c.create === "function"
+  );
+}
+
+export type TopicConverterCollation = {
+  // outputTopic -> the converter that produces it (first wins on collision).
+  byOutput: Map<string, Immutable<TopicConverter>>;
+  // inputTopic -> converters that consume it.
+  byInput: Map<string, Immutable<TopicConverter>[]>;
+};
+
+/**
+ * Collate topic converters into lookup maps keyed by their output and input topics.
+ * Memoize over `messageConverters` for stable identity (drives renderState rebuilds).
+ */
+export function collateTopicConverters(
+  messageConverters: undefined | readonly Immutable<InstalledMessageConverter>[],
+): TopicConverterCollation {
+  const byOutput = new Map<string, Immutable<TopicConverter>>();
+  const byInput = new Map<string, Immutable<TopicConverter>[]>();
+  for (const converter of messageConverters ?? []) {
+    if (!isTopicConverter(converter)) {
+      continue;
+    }
+    if (!byOutput.has(converter.outputTopic)) {
+      byOutput.set(converter.outputTopic, converter);
+    }
+    for (const inputTopic of converter.inputTopics) {
+      let list = byInput.get(inputTopic);
+      if (!list) {
+        list = [];
+        byInput.set(inputTopic, list);
+      }
+      list.push(converter);
+    }
+  }
+  return { byOutput, byInput };
 }
 
 export type TopicSchemaConversions = {
@@ -132,13 +275,25 @@ export function collateTopicSchemaConversions(
   const topicSchemaConverters: TopicSchemaConverterMap = new Map();
   const unconvertedSubscriptionTopics = new Set<string>();
 
+  // Output topics of topic converters are virtual: they have no original message and are driven by
+  // the byInput path in renderState. Exclude them here so a plain (no convertTo) subscription to an
+  // outputTopic is not mistaken for a request to pass through a (non-existent) raw message.
+  const topicConverterOutputs = new Set<string>();
+  for (const converter of messageConverters ?? []) {
+    if (isTopicConverter(converter)) {
+      topicConverterOutputs.add(converter.outputTopic);
+    }
+  }
+
   // Bin the subscriptions into two sets: those which want a conversion and those that do not.
   //
   // For the subscriptions that want a conversion, if the topic schemaName matches the requested
   // convertTo, then we don't need to do a conversion.
   for (const subscription of subscriptions) {
     if (!subscription.convertTo) {
-      unconvertedSubscriptionTopics.add(subscription.topic);
+      if (!topicConverterOutputs.has(subscription.topic)) {
+        unconvertedSubscriptionTopics.add(subscription.topic);
+      }
       continue;
     }
 

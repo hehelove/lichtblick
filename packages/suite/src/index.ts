@@ -560,6 +560,12 @@ export type MessageConverterContext = {
 };
 
 export type RegisterMessageConverterArgs<Src> = {
+  /**
+   * Converter kind. Defaults to "schema" (the classic fromSchemaName -> toSchemaName converter).
+   * "topic" is a Lichtblick-fork runtime extension that re-adds Foxglove's topic converters
+   * (one-or-more `inputTopics` -> a new virtual `outputTopic`); see fields below.
+   */
+  type?: "schema" | "topic";
   fromSchemaName: string;
   toSchemaName: string;
   /**
@@ -578,6 +584,22 @@ export type RegisterMessageConverterArgs<Src> = {
    * Custom settings for the topics using the schema specified in the *toSchemaName* property
    */
   panelSettings?: Record<string, PanelSettings<unknown>>;
+
+  // ---- topic converter fields (only present when type === "topic") ----
+  /** Input topics whose messages feed the converter. */
+  inputTopics?: readonly string[];
+  /** Virtual output topic produced by the converter. */
+  outputTopic?: string;
+  /** Schema name of messages emitted on `outputTopic`. */
+  outputSchemaName?: string;
+  /**
+   * Initializes the converter. Called when a panel subscribes to `outputTopic`; receives the
+   * current global variables and returns a function invoked with every input MessageEvent that
+   * returns the converted message(s) (or undefined to skip).
+   */
+  create?: (
+    globalVariables?: Readonly<Record<string, VariableValue>>,
+  ) => (event: Immutable<MessageEvent<Src>>) => unknown;
 };
 
 type BaseTopic = { name: string; schemaName?: string };

@@ -1374,4 +1374,70 @@ describe("renderState", () => {
       appSettings: new Map(),
     });
   });
+
+  describe("topic converters", () => {
+    const topicConverter = {
+      type: "topic",
+      inputTopics: ["test"],
+      outputTopic: "/derived",
+      outputSchemaName: "foxglove.SceneUpdate",
+      create:
+        () =>
+        (event: { message: unknown }): unknown => ({ derivedFrom: event.message }),
+    };
+
+    it("exposes the virtual outputTopic when an input topic exists", () => {
+      const { buildRenderState, input } = setup();
+      _.merge(input, {
+        sortedTopics: [{ name: "test", schemaName: "schema" }],
+        messageConverters: [topicConverter],
+        watchedFields: new Set(["topics"]),
+      });
+      const state = buildRenderState(input);
+
+      expect(state?.topics).toContainEqual({
+        name: "/derived",
+        schemaName: "foxglove.SceneUpdate",
+      });
+    });
+
+    it("does not expose the virtual topic when no input topic is present", () => {
+      const { buildRenderState, input } = setup();
+      _.merge(input, {
+        sortedTopics: [{ name: "other", schemaName: "schema" }],
+        messageConverters: [topicConverter],
+        watchedFields: new Set(["topics"]),
+      });
+      const state = buildRenderState(input);
+
+      expect(state?.topics?.some((t) => t.name === "/derived")).toBe(false);
+    });
+
+    it("produces an outputTopic message in currentFrame from input messages", () => {
+      const { buildRenderState, input } = setup();
+      _.merge(input, {
+        sortedTopics: [{ name: "test", schemaName: "schema" }],
+        subscriptions: [{ topic: "/derived" }],
+        messageConverters: [topicConverter],
+        currentFrame: [
+          {
+            topic: "test",
+            schemaName: "schema",
+            receiveTime: { sec: 1, nsec: 0 },
+            sizeInBytes: 1,
+            message: { value: 7 },
+          },
+        ],
+        watchedFields: new Set(["currentFrame"]),
+      });
+      const state = buildRenderState(input);
+
+      const derived = state?.currentFrame?.find((m) => m.topic === "/derived");
+      expect(derived).toMatchObject({
+        topic: "/derived",
+        schemaName: "foxglove.SceneUpdate",
+        message: { derivedFrom: { value: 7 } },
+      });
+    });
+  });
 });

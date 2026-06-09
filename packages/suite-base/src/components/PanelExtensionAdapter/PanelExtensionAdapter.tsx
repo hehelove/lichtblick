@@ -34,6 +34,7 @@ import {
 import { getTopicToSchemaNameMap } from "@lichtblick/suite-base/components/MessagePipeline/selectors";
 import { usePanelContext } from "@lichtblick/suite-base/components/PanelContext";
 import {
+  collateTopicConverters,
   collateTopicSchemaConversions,
   ConverterKey,
 } from "@lichtblick/suite-base/components/PanelExtensionAdapter/messageProcessing";
@@ -523,13 +524,27 @@ function PanelExtensionAdapter(
           messageConverters,
         );
 
-        const subscribePayloads = localSubs.map((item): InternalSubscribePayload => {
+        // Topic converters expose virtual outputTopics; the player has no such topic. Translate a
+        // subscription to an outputTopic into subscriptions for its real inputTopics so the player
+        // delivers the inputs which renderState then runs through the converter.
+        const { byOutput: topicConvertersByOutput } = collateTopicConverters(messageConverters);
+
+        const subscribePayloads = localSubs.flatMap((item): InternalSubscribePayload[] => {
           const preloadType = item.preload === true ? "full" : "partial";
+
+          const outputConverter = topicConvertersByOutput.get(item.topic);
+          if (outputConverter) {
+            // Subscribe to the underlying input topics (no convertTo/sampling on the virtual topic).
+            return outputConverter.inputTopics.map((inputTopic) => ({
+              topic: inputTopic,
+              preloadType,
+            }));
+          }
 
           // Preload requires full message history, so sampling is never allowed here.
           // Also, if the panel didn't request sampling, default to "needs all".
           if (item.preload === true || item.sampling?.mode !== "latest-per-render-tick") {
-            return { topic: item.topic, preloadType };
+            return [{ topic: item.topic, preloadType }];
           }
 
           // Sampling is only allowed if the converter explicitly declares it supports
@@ -550,12 +565,14 @@ function PanelExtensionAdapter(
             ? false
             : converter?.supportsLatestPerRenderTick === true;
 
-          return {
-            topic: item.topic,
-            preloadType,
-            samplingRequest: samplingAllowed ? item.sampling : undefined,
-            samplingAuthorized: samplingAllowed ? true : undefined,
-          };
+          return [
+            {
+              topic: item.topic,
+              preloadType,
+              samplingRequest: samplingAllowed ? item.sampling : undefined,
+              samplingAuthorized: samplingAllowed ? true : undefined,
+            },
+          ];
         });
 
         setLocalSubscriptions(localSubs);

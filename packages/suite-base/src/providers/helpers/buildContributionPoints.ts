@@ -71,8 +71,11 @@ export function buildContributionPoints(
     },
 
     registerMessageConverter: <Src>(messageConverter: RegisterMessageConverterArgs<Src>) => {
+      const isTopicConverter = messageConverter.type === "topic";
       log.debug(
-        `Extension ${extension.qualifiedName} registering message converter from: ${messageConverter.fromSchemaName} to: ${messageConverter.toSchemaName}`,
+        isTopicConverter
+          ? `Extension ${extension.qualifiedName} registering topic converter: ${String(messageConverter.inputTopics)} -> ${messageConverter.outputTopic}`
+          : `Extension ${extension.qualifiedName} registering message converter from: ${messageConverter.fromSchemaName} to: ${messageConverter.toSchemaName}`,
       );
 
       messageConverters.push({
@@ -81,11 +84,14 @@ export function buildContributionPoints(
         extensionId: extension.id,
       } as InstalledMessageConverter);
 
-      const converterSettings = _.mapValues(messageConverter.panelSettings, (settings) => ({
-        [messageConverter.fromSchemaName]: settings,
-      }));
+      // Topic converters key panel settings by outputTopic, not by fromSchemaName.
+      if (!isTopicConverter) {
+        const converterSettings = _.mapValues(messageConverter.panelSettings, (settings) => ({
+          [messageConverter.fromSchemaName]: settings,
+        }));
 
-      _.merge(panelSettings, converterSettings);
+        _.merge(panelSettings, converterSettings);
+      }
     },
 
     registerTopicAliases: (aliasFunction: TopicAliasFunction) => {

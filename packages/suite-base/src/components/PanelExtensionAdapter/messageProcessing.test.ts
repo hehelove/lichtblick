@@ -9,7 +9,31 @@ import { MessageEvent } from "@lichtblick/suite";
 import GlobalVariableBuilder from "@lichtblick/suite-base/testing/builders/GlobalVariableBuilder";
 import MessageEventBuilder from "@lichtblick/suite-base/testing/builders/MessageEventBuilder";
 
-import { convertMessage, forEachSortedArrays } from "./messageProcessing";
+import { InstalledMessageConverter } from "@lichtblick/suite-base/types/messageConverters";
+
+import {
+  collateTopicConverters,
+  collateTopicSchemaConversions,
+  convertMessage,
+  forEachSortedArrays,
+  isTopicConverter,
+  runTopicConverters,
+  TopicConverter,
+} from "./messageProcessing";
+
+function makeTopicConverter(overrides: Partial<TopicConverter> = {}): InstalledMessageConverter {
+  return {
+    type: "topic",
+    inputTopics: ["/in"],
+    outputTopic: "/out",
+    outputSchemaName: "foxglove.SceneUpdate",
+    create:
+      () =>
+      (event: { message: unknown }): unknown => ({ derived: event.message }),
+    extensionId: "ext.test",
+    ...overrides,
+  } as unknown as InstalledMessageConverter;
+}
 
 describe("forEachSortedArrays", () => {
   it("should not call forEach for empty arrays", () => {
@@ -253,5 +277,140 @@ describe("convertMessage", () => {
     convertMessage(messageWithConfig, converters, convertedMessages);
 
     expect(convertedMessages[0]?.topicConfig).toEqual({ someConfig: "value" });
+  });
+});
+
+describe("isTopicConverter", () => {
+  it("accepts a fully-formed topic converter", () => {
+    expect(isTopicConverter(makeTopicConverter())).toBe(true);
+  });
+
+  it("rejects schema converters and malformed topic converters", () => {
+    const schemaConverter = {
+      fromSchemaName: "A",
+      toSchemaName: "B",
+      converter: jest.fn(),
+    } as unknown as InstalledMessageConverter;
+    expect(isTopicConverter(schemaConverter)).toBe(false);
+    // type:"topic" but missing required fields
+    expect(
+      isTopicConverter({ type: "topic", inputTopics: [] } as unknown as InstalledMessageConverter),
+    ).toBe(false);
+  });
+});
+
+describe("collateTopicConverters", () => {
+  it("indexes converters by output and input topics", () => {
+    const c1 = makeTopicConverter({ inputTopics: ["/a", "/b"], outputTopic: "/out1" });
+    const c2 = makeTopicConverter({ inputTopics: ["/a"], outputTopic: "/out2" });
+
+    const { byOutput, byInput } = collateTopicConverters([c1, c2]);
+
+    expect([...byOutput.keys()].sort()).toEqual(["/out1", "/out2"]);
+    expect(byInput.get("/a")).toHaveLength(2);
+    expect(byInput.get("/b")).toHaveLength(1);
+  });
+
+  it("ignores non-topic converters", () => {
+    const schema = {
+      fromSchemaName: "A",
+      toSchemaName: "B",
+      converter: jest.fn(),
+    } as unknown as InstalledMessageConverter;
+    const { byOutput } = collateTopicConverters([schema]);
+    expect(byOutput.size).toBe(0);
+  });
+});
+
+describe("runTopicConverters", () => {
+  const inputEvent = {
+    ...MessageEventBuilder.messageEvent(),
+    topic: "/in",
+    message: { value: 1 },
+  };
+
+  it("produces an outputTopic message from a matching input", () => {
+    const { byInput } = collateTopicConverters([makeTopicConverter()]);
+    const out: MessageEvent[] = [];
+    runTopicConverters(inputEvent, byInput, new Map(), out);
+
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({
+      topic: "/out",
+      schemaName: "foxglove.SceneUpdate",
+      message: { derived: inputEvent.message },
+      receiveTime: inputEvent.receiveTime,
+    });
+    expect(out[0]?.originalMessageEvent).toBe(inputEvent);
+  });
+
+  it("supports one input fanning out to multiple output topics", () => {
+    const convs = [
+      makeTopicConverter({ outputTopic: "/out1" }),
+      makeTopicConverter({ outputTopic: "/out2" }),
+    ];
+    const { byInput } = collateTopicConverters(convs);
+    const out: MessageEvent[] = [];
+    runTopicConverters(inputEvent, byInput, new Map(), out);
+    expect(out.map((m) => m.topic).sort()).toEqual(["/out1", "/out2"]);
+  });
+
+  it("flattens array results and skips undefined entries", () => {
+    const conv = makeTopicConverter({
+      create: () => () => [{ a: 1 }, undefined, { a: 2 }],
+    });
+    const { byInput } = collateTopicConverters([conv]);
+    const out: MessageEvent[] = [];
+    runTopicConverters(inputEvent, byInput, new Map(), out);
+    expect(out.map((m) => m.message)).toEqual([{ a: 1 }, { a: 2 }]);
+  });
+
+  it("caches the create() instance across calls and reuses it", () => {
+    const inner = jest.fn(() => ({ ok: true }));
+    const create = jest.fn(() => inner);
+    const conv = makeTopicConverter({ create });
+    const { byInput } = collateTopicConverters([conv]);
+    const fnCache = new Map();
+
+    runTopicConverters(inputEvent, byInput, fnCache, []);
+    runTopicConverters(inputEvent, byInput, fnCache, []);
+
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(inner).toHaveBeenCalledTimes(2);
+  });
+
+  it("skips when the create() result returns undefined", () => {
+    const conv = makeTopicConverter({ create: () => () => undefined });
+    const { byInput } = collateTopicConverters([conv]);
+    const out: MessageEvent[] = [];
+    runTopicConverters(inputEvent, byInput, new Map(), out);
+    expect(out).toHaveLength(0);
+  });
+
+  it("emits an alert and continues when the converter throws", () => {
+    const conv = makeTopicConverter({
+      create: () => () => {
+        throw new Error("boom");
+      },
+    });
+    const { byInput } = collateTopicConverters([conv]);
+    const out: MessageEvent[] = [];
+    const emitAlert = jest.fn();
+    runTopicConverters(inputEvent, byInput, new Map(), out, undefined, { emitAlert });
+    expect(out).toHaveLength(0);
+    expect(emitAlert).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("collateTopicSchemaConversions with topic converters", () => {
+  it("excludes topic-converter outputTopics from unconvertedSubscriptionTopics", () => {
+    const conv = makeTopicConverter({ inputTopics: ["/in"], outputTopic: "/out" });
+    const { unconvertedSubscriptionTopics } = collateTopicSchemaConversions(
+      [{ topic: "/out" }, { topic: "/plain" }],
+      [{ name: "/in", schemaName: "S" }],
+      [conv],
+    );
+    expect(unconvertedSubscriptionTopics.has("/out")).toBe(false);
+    expect(unconvertedSubscriptionTopics.has("/plain")).toBe(true);
   });
 });
