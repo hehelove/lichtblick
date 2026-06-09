@@ -101,12 +101,21 @@ export function runTopicConverters(
   convertedMessages: MessageEvent[],
   globalVariables?: Readonly<GlobalVariables>,
   context?: ConvertMessageContext,
+  // outputTopic allow-list for THIS panel's subscriptions. A single inputTopic frequently fans out
+  // to many converters/outputTopics (e.g. one SyncLidarCameraData -> 7 per-camera topics). Without
+  // this filter every panel's currentFrame would be flooded with ALL virtual topics, so a panel
+  // subscribed to only one camera ends up showing whichever one the consumer picks (all panels look
+  // identical). When provided, only run converters whose outputTopic this panel subscribed to.
+  subscribedOutputTopics?: ReadonlySet<string>,
 ): void {
   const matched = byInput.get(messageEvent.topic);
   if (!matched) {
     return;
   }
   for (const converter of matched) {
+    if (subscribedOutputTopics && !subscribedOutputTopics.has(converter.outputTopic)) {
+      continue;
+    }
     let fn = converterFns.get(converter);
     if (!fn) {
       try {

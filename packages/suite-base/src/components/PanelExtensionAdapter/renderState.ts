@@ -180,6 +180,13 @@ function initRenderStateBuilder(): BuildRenderStateFn {
     }
     const globalVariablesReadonly = { ...globalVariables } as Readonly<GlobalVariables>;
 
+    // Per-panel allow-list of subscribed (virtual) outputTopics. A single inputTopic can fan out to
+    // many topic converters (e.g. one SyncLidarCameraData -> 7 per-camera outputTopics); without
+    // this, every panel's currentFrame would be flooded with ALL of them and panels subscribed to a
+    // single camera would all show the same one. Pass it to runTopicConverters to only produce the
+    // outputTopics this panel actually subscribed to.
+    const subscribedOutputTopics = new Set(subscriptions.map((sub) => sub.topic));
+
     if (prevSeekTime !== activeData?.lastSeekTime) {
       lastMessageByTopic.clear();
     }
@@ -299,6 +306,7 @@ function initRenderStateBuilder(): BuildRenderStateFn {
             postProcessedFrame,
             globalVariablesReadonly,
             { emitAlert },
+            subscribedOutputTopics,
           );
           lastMessageByTopic.set(messageEvent.topic, messageEvent);
         }
@@ -326,6 +334,7 @@ function initRenderStateBuilder(): BuildRenderStateFn {
             postProcessedFrame,
             globalVariablesReadonly,
             { emitAlert },
+            subscribedOutputTopics,
           );
         }
         renderState.currentFrame = postProcessedFrame;
@@ -352,6 +361,7 @@ function initRenderStateBuilder(): BuildRenderStateFn {
             postProcessedFrame,
             globalVariablesReadonly,
             { emitAlert },
+            subscribedOutputTopics,
           );
         }
         renderState.currentFrame = postProcessedFrame;
@@ -434,6 +444,7 @@ function initRenderStateBuilder(): BuildRenderStateFn {
                 frames,
                 globalVariablesReadonly,
                 { emitAlert },
+                subscribedOutputTopics,
               );
             },
           );
