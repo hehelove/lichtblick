@@ -65,10 +65,7 @@ import {
   LayoutState,
   useCurrentLayoutSelector,
 } from "@lichtblick/suite-base/context/CurrentLayoutContext";
-import {
-  useCurrentUser,
-  useCurrentUserType,
-} from "@lichtblick/suite-base/context/CurrentUserContext";
+import { useCurrentUser } from "@lichtblick/suite-base/context/CurrentUserContext";
 import { EventsStore, useEvents } from "@lichtblick/suite-base/context/EventsContext";
 import { useLayoutManager } from "@lichtblick/suite-base/context/LayoutManagerContext";
 import { usePlayerSelection } from "@lichtblick/suite-base/context/PlayerSelectionContext";
@@ -195,8 +192,6 @@ function WorkspaceContent(props: WorkspaceProps): React.JSX.Element {
   // We use playerId to detect when a player changes for RemountOnValueChange below
   // see comment below above the RemountOnValueChange component
   const playerId = useMessagePipeline(selectPlayerId);
-
-  const currentUserType = useCurrentUserType();
 
   useDefaultWebLaunchPreference();
 

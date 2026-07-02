@@ -35,7 +35,7 @@ type EventCluster = {
   maxPosition: number;
 };
 
-function clusterEvents(events: TimelinePositionedEvent[]): EventCluster[] {
+function clusterEvents(events: readonly TimelinePositionedEvent[]): EventCluster[] {
   const sorted = [...events].sort((a, b) => a.startPosition - b.startPosition);
   const clusters: EventCluster[] = [];
 
@@ -220,7 +220,7 @@ function EventClusterTick({ cluster }: { cluster: EventCluster }): React.JSX.Ele
 
 const MemoEventClusterTick = React.memo(EventClusterTick);
 
-export function EventsOverlay(): React.JSX.Element {
+export function EventsOverlay(): React.JSX.Element | null {
   const events = useEvents(selectEvents);
   const { classes } = useStyles();
 
@@ -230,7 +230,7 @@ export function EventsOverlay(): React.JSX.Element {
   );
 
   if (clusters.length === 0) {
-    return <ReactNull />;
+    return ReactNull;
   }
 
   return (

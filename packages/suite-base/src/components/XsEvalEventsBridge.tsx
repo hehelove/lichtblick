@@ -40,7 +40,7 @@ function metaString(v: unknown): string {
     return "";
   }
   if (typeof v === "object") {
-    return JSON.stringify(v);
+    return JSON.stringify(v) ?? "";
   }
   return String(v);
 }
