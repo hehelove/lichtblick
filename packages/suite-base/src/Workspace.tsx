@@ -55,6 +55,7 @@ import {
   StudioLogsSettingsSidebar,
 } from "@lichtblick/suite-base/components/StudioLogsSettings";
 import { SyncAdapters } from "@lichtblick/suite-base/components/SyncAdapters";
+import { XsEvalEventsBridge } from "@lichtblick/suite-base/components/XsEvalEventsBridge";
 import { TopicList } from "@lichtblick/suite-base/components/TopicList";
 import VariablesList from "@lichtblick/suite-base/components/VariablesList";
 import { WorkspaceDialogs } from "@lichtblick/suite-base/components/WorkspaceDialogs";
@@ -381,7 +382,8 @@ function WorkspaceContent(props: WorkspaceProps): React.JSX.Element {
   ]);
 
   const eventsSupported = useEvents(selectEventsSupported);
-  const showEventsTab = currentUserType !== "unauthenticated" && eventsSupported;
+  // xs：评测事件由 XsEvalEventsBridge 注入，viz 多为未登录用户，不再要求 authenticated。
+  const showEventsTab = eventsSupported;
 
   const leftSidebarItems = useMemo(() => {
     const items = new Map<LeftSidebarItemKey, SidebarItem>([
@@ -707,6 +709,7 @@ function WorkspaceContent(props: WorkspaceProps): React.JSX.Element {
       {dataSourceDialog.open && <DataSourceDialog />}
       <DocumentDropListener onDrop={dropHandler} allowedExtensions={allowedDropExtensions} />
       <SyncAdapters />
+      <XsEvalEventsBridge />
       <KeyListener global keyDownHandlers={keyDownHandlers} />
       <div className={classes.container} ref={containerRef} tabIndex={0}>
         {appBar}
