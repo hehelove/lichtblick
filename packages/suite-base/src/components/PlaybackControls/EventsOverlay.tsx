@@ -7,7 +7,7 @@
 
 import { alpha, useTheme } from "@mui/material";
 import * as _ from "lodash-es";
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { makeStyles } from "tss-react/mui";
 
 import {
@@ -23,6 +23,11 @@ import {
   TimelineInteractionStateStore,
   useTimelineInteractionState,
 } from "@lichtblick/suite-base/context/TimelineInteractionStateContext";
+
+import {
+  XsEvalEventTooltip,
+  type XsEvalTooltipState,
+} from "./XsEvalEventTooltip";
 
 /** 时间轴上相邻事件合并为簇的 frac 阈值（约 0.25% 时长）。 */
 const CLUSTER_FRAC_EPS = 0.0025;
@@ -68,21 +73,6 @@ function clusterSeverity(events: TimelinePositionedEvent[]): string {
     }
   }
   return best;
-}
-
-function clusterTitle(cluster: EventCluster): string {
-  if (cluster.events.length === 1) {
-    const ev = cluster.events[0]!.event;
-    const sev = ev.metadata.severity ?? "info";
-    const typ = ev.metadata.type ?? "";
-    const msg = ev.metadata.message ?? "";
-    return `[${sev}] ${typ}${msg ? `: ${msg}` : ""}`;
-  }
-  const lines = cluster.events.map((e) => {
-    const m = e.event.metadata;
-    return `[${m.severity ?? "info"}] ${m.type ?? ""}${m.message ? `: ${m.message}` : ""}`;
-  });
-  return `${cluster.events.length} events\n${lines.join("\n")}`;
 }
 
 const useStyles = makeStyles()(({ transitions, palette }) => ({
@@ -144,7 +134,20 @@ const selectSelectedEventId = (store: EventsStore) => store.selectedEventId;
 const selectSelectEvent = (store: EventsStore) => store.selectEvent;
 const selectSeek = (ctx: MessagePipelineContext) => ctx.seekPlayback;
 
-function EventClusterTick({ cluster }: { cluster: EventCluster }): React.JSX.Element {
+type TickTooltipHandlers = {
+  onHoverStart: (cluster: EventCluster, anchor: HTMLElement) => void;
+  onHoverEnd: () => void;
+  onPin: (cluster: EventCluster, anchor: HTMLElement) => void;
+  onUnpin: () => void;
+};
+
+function EventClusterTick({
+  cluster,
+  tooltipHandlers,
+}: {
+  cluster: EventCluster;
+  tooltipHandlers: TickTooltipHandlers;
+}): React.JSX.Element {
   const hoveredEvent = useTimelineInteractionState(selectHoveredEvent);
   const setHoveredEvent = useTimelineInteractionState(selectSetHoveredEvent);
   const selectedEventId = useEvents(selectSelectedEventId);
@@ -171,26 +174,34 @@ function EventClusterTick({ cluster }: { cluster: EventCluster }): React.JSX.Ele
   const isSelected = cluster.events.some((e) => e.event.id === selectedEventId);
 
   const onClick = useCallback(
-    (e: React.MouseEvent) => {
+    (e: React.MouseEvent<HTMLDivElement>) => {
       e.stopPropagation();
       const target = primary;
+      const el = e.currentTarget;
       if (target.event.id === selectedEventId) {
         selectEvent(undefined);
+        tooltipHandlers.onUnpin();
       } else {
         selectEvent(target.event.id);
+        tooltipHandlers.onPin(cluster, el);
       }
       seek?.(target.event.startTime);
     },
-    [primary, seek, selectEvent, selectedEventId],
+    [cluster, primary, seek, selectEvent, selectedEventId, tooltipHandlers],
   );
 
-  const onMouseEnter = useCallback(() => {
-    setHoveredEvent(primary);
-  }, [primary, setHoveredEvent]);
+  const onMouseEnter = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      setHoveredEvent(primary);
+      tooltipHandlers.onHoverStart(cluster, e.currentTarget);
+    },
+    [cluster, primary, setHoveredEvent, tooltipHandlers],
+  );
 
   const onMouseLeave = useCallback(() => {
     setHoveredEvent(undefined);
-  }, [setHoveredEvent]);
+    tooltipHandlers.onHoverEnd();
+  }, [setHoveredEvent, tooltipHandlers]);
 
   return (
     <div
@@ -208,10 +219,10 @@ function EventClusterTick({ cluster }: { cluster: EventCluster }): React.JSX.Ele
         width: `max(${theme.spacing(0.5)}, ${widthPct}%)`,
         transform: "translateX(-50%)",
       }}
-      title={clusterTitle(cluster)}
       onClick={onClick}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
+      data-testid="xs-eval-event-tick"
     >
       {cluster.events.length > 1 ? cluster.events.length : undefined}
     </div>
@@ -222,25 +233,87 @@ const MemoEventClusterTick = React.memo(EventClusterTick);
 
 export function EventsOverlay(): React.JSX.Element | null {
   const events = useEvents(selectEvents);
+  const selectedEventId = useEvents(selectSelectedEventId);
+  const selectEvent = useEvents(selectSelectEvent);
   const { classes } = useStyles();
+
+  const [hoverTip, setHoverTip] = useState<XsEvalTooltipState | undefined>();
+  const pinnedTipRef = useRef<XsEvalTooltipState | undefined>(undefined);
+  const [, forcePinRender] = useState(0);
 
   const clusters = useMemo(
     () => clusterEvents(events.value ?? []),
     [events.value],
   );
 
+  const setPinnedTip = useCallback((state: XsEvalTooltipState | undefined) => {
+    pinnedTipRef.current = state;
+    forcePinRender((n) => n + 1);
+  }, []);
+
+  useEffect(() => {
+    if (!selectedEventId) {
+      pinnedTipRef.current = undefined;
+      forcePinRender((n) => n + 1);
+    }
+  }, [selectedEventId]);
+
+  const tooltipHandlers = useMemo<TickTooltipHandlers>(
+    () => ({
+      onHoverStart: (cluster, anchor) => {
+        setHoverTip({ anchor, events: cluster.events });
+      },
+      onHoverEnd: () => {
+        setHoverTip(undefined);
+      },
+      onPin: (cluster, anchor) => {
+        setPinnedTip({ anchor, events: cluster.events });
+      },
+      onUnpin: () => {
+        setPinnedTip(undefined);
+      },
+    }),
+    [setPinnedTip],
+  );
+
+  // 点击标记外区域取消固定（对齐旧版 bootstrap）。
+  useEffect(() => {
+    const onDocDown = (e: MouseEvent) => {
+      const t = e.target;
+      if (!(t instanceof HTMLElement) || t.closest('[data-testid="xs-eval-event-tick"]') == undefined) {
+        if (pinnedTipRef.current) {
+          pinnedTipRef.current = undefined;
+          forcePinRender((n) => n + 1);
+        }
+        if (selectedEventId) {
+          selectEvent(undefined);
+        }
+      }
+    };
+    document.addEventListener("mousedown", onDocDown, true);
+    return () => {
+      document.removeEventListener("mousedown", onDocDown, true);
+    };
+  }, [selectEvent, selectedEventId]);
+
+  const activeTip = hoverTip ?? pinnedTipRef.current;
+
   if (clusters.length === 0) {
     return ReactNull;
   }
 
   return (
-    <div className={classes.root}>
-      {clusters.map((cluster) => (
-        <MemoEventClusterTick
-          key={cluster.events.map((e) => e.event.id).join(",")}
-          cluster={cluster}
-        />
-      ))}
-    </div>
+    <>
+      <div className={classes.root}>
+        {clusters.map((cluster) => (
+          <MemoEventClusterTick
+            key={cluster.events.map((e) => e.event.id).join(",")}
+            cluster={cluster}
+            tooltipHandlers={tooltipHandlers}
+          />
+        ))}
+      </div>
+      <XsEvalEventTooltip state={activeTip} />
+    </>
   );
 }

@@ -101,11 +101,20 @@ const selectEndTime = (ctx: MessagePipelineContext) => ctx.playerState.activeDat
 const selectSetEvents = (store: EventsStore) => store.setEvents;
 const selectSetEventsSupported = (store: EventsStore) => store.setEventsSupported;
 
+function timeKey(t: Time | undefined): string {
+  if (!t) {
+    return "";
+  }
+  return `${t.sec}.${t.nsec}`;
+}
+
 /** 无 UI；有 xsEvents URL 时拉取评测事件并写入 EventsContext。 */
 export function XsEvalEventsBridge(): ReactNull {
   const eventsUrl = useMemo(() => getXsEventsUrl(), []);
   const startTime = useMessagePipeline(selectStartTime);
   const endTime = useMessagePipeline(selectEndTime);
+  const startKey = timeKey(startTime);
+  const endKey = timeKey(endTime);
   const setEvents = useEvents(selectSetEvents);
   const setEventsSupported = useEvents(selectSetEventsSupported);
 
@@ -117,7 +126,7 @@ export function XsEvalEventsBridge(): ReactNull {
   }, [eventsUrl, setEventsSupported]);
 
   useEffect(() => {
-    if (!eventsUrl || !startTime || !endTime) {
+    if (!eventsUrl || !startKey || !endKey || !startTime || !endTime) {
       return;
     }
 
@@ -157,7 +166,7 @@ export function XsEvalEventsBridge(): ReactNull {
       cancelled = true;
       window.removeEventListener("xs-eval-events-refresh", onRefresh);
     };
-  }, [eventsUrl, startTime, endTime, setEvents]);
+  }, [eventsUrl, startKey, endKey, startTime, endTime, setEvents]);
 
   return ReactNull;
 }
