@@ -40,6 +40,8 @@ const tempVec3 = new THREE.Vector3();
 const tempSpherical = new THREE.Spherical();
 const tempEuler = new THREE.Euler();
 const FOLLOW_TF_PATH = ["general", "followTf"];
+const CENTER_EPS = 1e-3;
+
 export class CameraStateSettings extends SceneExtension implements ICameraHandler {
   // The frameId's of the fixed and render frames used to create the current unfollowPoseSnapshot
   #unfollowSnapshotFrameIds:
@@ -64,6 +66,8 @@ export class CameraStateSettings extends SceneExtension implements ICameraHandle
   #perspectiveCamera: THREE.PerspectiveCamera;
   #orthographicCamera: THREE.OrthographicCamera;
   #aspect: number;
+  /** Layout baseline for reset-center (target offset + heading, not zoom). */
+  #baselineCameraState: CameraState;
 
   public constructor(renderer: IRenderer, canvas: HTMLCanvasElement, aspect: number) {
     super("foxglove.CameraStateSettings", renderer);
@@ -115,6 +119,7 @@ export class CameraStateSettings extends SceneExtension implements ICameraHandle
     this.#aspect = aspect;
     this.#controls.keys = DEFAULT_ORBIT_CONTROLS_CONFIG.keys;
     this.#controls.listenToKeyEvents(canvas);
+    this.#baselineCameraState = _.cloneDeep(renderer.config.cameraState);
   }
 
   public override dispose(): void {
@@ -407,7 +412,57 @@ export class CameraStateSettings extends SceneExtension implements ICameraHandle
 
   #handleCameraMove = (): void => {
     this.updateSettingsTree();
+    this.renderer.emit("resetViewChanged", this.renderer);
   };
+
+  public hasModifiedCenter(): boolean {
+    const cur = this.getCameraState();
+    if (!cur) {
+      return false;
+    }
+    const base = this.#baselineCameraState;
+    const off = cur.targetOffset;
+    const center = DEFAULT_CAMERA_STATE.targetOffset;
+    if (
+      Math.hypot(off[0] - center[0], off[1] - center[1], off[2] - center[2]) > CENTER_EPS
+    ) {
+      return true;
+    }
+    if (Math.abs(cur.thetaOffset - base.thetaOffset) > CENTER_EPS) {
+      return true;
+    }
+    if (cur.perspective && Math.abs(cur.phi - base.phi) > CENTER_EPS) {
+      return true;
+    }
+    return false;
+  }
+
+  public resetCameraCenter(): void {
+    const current = this.getCameraState();
+    if (!current) {
+      return;
+    }
+    const base = this.#baselineCameraState;
+    const restored: CameraState = {
+      ...current,
+      // Follow-frame origin (ego_local 原点 = 自车 IMU)，勿用 layout 里可能带脏值的 baseline 偏移
+      targetOffset: [...DEFAULT_CAMERA_STATE.targetOffset],
+      thetaOffset: base.thetaOffset,
+    };
+    if (current.perspective) {
+      restored.phi = base.phi;
+    }
+    this.renderer.updateConfig((draft) => {
+      draft.cameraState.targetOffset = [...restored.targetOffset];
+      draft.cameraState.thetaOffset = restored.thetaOffset;
+      if (draft.cameraState.perspective) {
+        draft.cameraState.phi = restored.phi;
+      }
+    });
+    this.setCameraState(restored);
+    this.updateSettingsTree();
+    this.renderer.emit("resetViewChanged", this.renderer);
+  }
 
   #handleTransformTreeUpdated = (): void => {
     this.#updateFollowFrameId();

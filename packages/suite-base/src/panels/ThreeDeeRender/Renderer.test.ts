@@ -495,6 +495,32 @@ describe("3D Renderer", () => {
     renderer.dispose();
   });
 
+  it("can reset 3D orbit center when target offset is modified", () => {
+    const renderer = new Renderer({ ...defaultRendererProps, canvas });
+    const cameraStateSettings = renderer.sceneExtensions.get(
+      "foxglove.CameraStateSettings",
+    ) as CameraStateSettings;
+    cameraStateSettings.setCameraState(DEFAULT_CAMERA_STATE);
+    expect(renderer.canResetView()).toBe(false);
+
+    renderer.updateConfig((draft) => {
+      draft.cameraState.targetOffset = [5, 0, 0];
+    });
+    cameraStateSettings.setCameraState({
+      ...DEFAULT_CAMERA_STATE,
+      targetOffset: [5, 0, 0],
+    });
+    expect(renderer.canResetView()).toBe(true);
+
+    renderer.resetView();
+    expect(renderer.canResetView()).toBe(false);
+    expect(cameraStateSettings.getCameraState()?.targetOffset).toEqual([
+      ...DEFAULT_CAMERA_STATE.targetOffset,
+    ]);
+
+    renderer.dispose();
+  });
+
   it("sets and clears selected renderable", () => {
     // Given: A renderer instance
     const renderer = new Renderer({ ...defaultRendererProps, canvas });

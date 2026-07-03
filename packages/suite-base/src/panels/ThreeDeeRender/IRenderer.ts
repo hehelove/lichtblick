@@ -359,9 +359,9 @@ export interface IRenderer extends EventEmitter<RendererEvents> {
 
   getCameraState(): CameraState | undefined;
 
-  /** Whether the view has been modified and a reset button should be shown (image mode only). */
+  /** Whether the view has been modified and a reset button should be shown. */
   canResetView(): boolean;
-  /** Reset any manual view modifications (image mode only). */
+  /** Reset manual view modifications (image pan/zoom or 3D orbit center). */
   resetView(): void;
 
   setSelectedRenderable(selection: PickedRenderable | undefined): void;

@@ -24,6 +24,10 @@ export interface ICameraHandler extends SceneExtension {
    * Gets the state of the camera if interface mode supports it, otherwise undefined
    */
   getCameraState(): CameraState | undefined;
+  /** Whether the orbit target has been panned/rotated away from the layout baseline (3D mode). */
+  hasModifiedCenter?(): boolean;
+  /** Reset target offset and heading to the layout baseline, keeping zoom. */
+  resetCameraCenter?(): void;
   /**
    * Used to update the aspect ratio of the camera when necessary
    * @param width - The width of the render canvas in CSS pixels

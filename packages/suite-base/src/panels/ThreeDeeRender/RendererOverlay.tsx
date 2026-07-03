@@ -5,7 +5,7 @@
 // License, v2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/
 
-import { Ruler20Filled, Ruler20Regular } from "@fluentui/react-icons";
+import { MyLocation20Regular, Ruler20Filled, Ruler20Regular } from "@fluentui/react-icons";
 import {
   Button,
   IconButton,
@@ -267,12 +267,11 @@ export function RendererOverlay(props: Props): React.JSX.Element {
   );
 
   const [showResetViewButton, setShowResetViewButton] = useState(renderer?.canResetView() ?? false);
-  useRendererEvent(
-    "resetViewChanged",
-    useCallback(() => {
-      setShowResetViewButton(renderer?.canResetView() ?? false);
-    }, [renderer]),
-  );
+  const refreshResetViewButton = useCallback(() => {
+    setShowResetViewButton(renderer?.canResetView() ?? false);
+  }, [renderer]);
+  useRendererEvent("resetViewChanged", refreshResetViewButton);
+  useRendererEvent("cameraMove", refreshResetViewButton);
   const onResetView = useCallback(() => {
     renderer?.resetView();
   }, [renderer]);
@@ -424,7 +423,7 @@ export function RendererOverlay(props: Props): React.JSX.Element {
     </>
   );
 
-  const resetViewButton = showResetViewButton && (
+  const resetViewButton = showResetViewButton && props.interfaceMode === "image" && (
     <Button
       className={classes.resetViewButton}
       variant="contained"
@@ -434,6 +433,19 @@ export function RendererOverlay(props: Props): React.JSX.Element {
     >
       {t("resetView")}
     </Button>
+  );
+
+  const resetCenterButton = showResetViewButton && props.interfaceMode === "3d" && (
+    <Tooltip placement="left" title={t("resetCenter")}>
+      <IconButton
+        className={classes.iconButton}
+        size="small"
+        onClick={onResetView}
+        data-testid="reset-center-button"
+      >
+        <MyLocation20Regular />
+      </IconButton>
+    </Tooltip>
   );
 
   const getContextMenuItems = useCallback((): PanelContextMenuItem[] => {
@@ -496,6 +508,8 @@ export function RendererOverlay(props: Props): React.JSX.Element {
                 </div>
               </IconButton>
             </Tooltip>
+
+            {resetCenterButton}
 
             {publishControls}
           </Paper>

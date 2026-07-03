@@ -221,4 +221,38 @@ describe("CameraStateSettings", () => {
       expect(mockOrbitControls.screenSpacePanning).toBe(false);
     });
   });
+
+  describe("reset center", () => {
+    const aspect = 16 / 9;
+
+    it("reports modified center when target offset changes", () => {
+      const cameraStateSettings = new CameraStateSettings(renderer, canvas, aspect);
+      cameraStateSettings.setCameraState(DEFAULT_CAMERA_STATE);
+      expect(cameraStateSettings.hasModifiedCenter()).toBe(false);
+
+      mockOrbitControls.target.set(5, 0, 0);
+      expect(cameraStateSettings.hasModifiedCenter()).toBe(true);
+    });
+
+    it("restores target offset and heading to baseline", () => {
+      const cameraStateSettings = new CameraStateSettings(renderer, canvas, aspect);
+      cameraStateSettings.setCameraState(DEFAULT_CAMERA_STATE);
+
+      mockOrbitControls.target.set(5, 2, 1);
+      mockOrbitControls.getAzimuthalAngle.mockReturnValue(
+        THREE.MathUtils.degToRad(-(DEFAULT_CAMERA_STATE.thetaOffset + 10)),
+      );
+      expect(cameraStateSettings.hasModifiedCenter()).toBe(true);
+
+      cameraStateSettings.resetCameraCenter();
+
+      expect(cameraStateSettings.hasModifiedCenter()).toBe(false);
+      expect(cameraStateSettings.getCameraState()?.targetOffset).toEqual([
+        ...DEFAULT_CAMERA_STATE.targetOffset,
+      ]);
+      expect(cameraStateSettings.getCameraState()?.thetaOffset).toBeCloseTo(
+        DEFAULT_CAMERA_STATE.thetaOffset,
+      );
+    });
+  });
 });

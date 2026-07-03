@@ -5,7 +5,7 @@
 
 import "@testing-library/jest-dom";
 
-import { act, render, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 
 import ThemeProvider from "@lichtblick/suite-base/theme/ThemeProvider";
 
@@ -64,6 +64,7 @@ const mockRenderer = {
   setPickingEnabled: jest.fn(),
   setSelectedRenderable: jest.fn(),
   canResetView: jest.fn(() => false),
+  resetView: jest.fn(),
   getContextMenuItems: jest.fn(() => []),
   fixedFrameId: undefined,
 };
@@ -316,6 +317,49 @@ describe("<RendererOverlay /> hover wiring", () => {
     await waitFor(() => {
       expect(mockLastHoverTooltipProps).toBeDefined();
       expect(mockLastHoverTooltipProps.entities).toEqual([]);
+    });
+  });
+
+  it("shows reset center in 3D toolbar when view is modified and calls resetView on click", async () => {
+    mockRenderer.canResetView.mockReturnValue(true);
+    const canvas = document.createElement("canvas");
+    renderOverlay(canvas);
+
+    const button = await screen.findByTestId("reset-center-button");
+    expect(button).toBeInTheDocument();
+
+    act(() => {
+      button.click();
+    });
+
+    expect(mockRenderer.resetView).toHaveBeenCalled();
+  });
+
+  it("hides reset center when canResetView is false", () => {
+    mockRenderer.canResetView.mockReturnValue(false);
+    const canvas = document.createElement("canvas");
+    renderOverlay(canvas);
+
+    expect(screen.queryByTestId("reset-center-button")).not.toBeInTheDocument();
+  });
+
+  it("updates reset center visibility on cameraMove", async () => {
+    mockRenderer.canResetView.mockReturnValue(false);
+    const canvas = document.createElement("canvas");
+    renderOverlay(canvas);
+
+    expect(screen.queryByTestId("reset-center-button")).not.toBeInTheDocument();
+
+    mockRenderer.canResetView.mockReturnValue(true);
+    const cameraMoveCb = mockRendererEventCallbacks.get("cameraMove");
+    expect(cameraMoveCb).toBeDefined();
+
+    act(() => {
+      cameraMoveCb?.();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("reset-center-button")).toBeInTheDocument();
     });
   });
 });

@@ -1022,11 +1022,18 @@ export class Renderer extends EventEmitter<RendererEvents> implements IRenderer 
   }
 
   public canResetView(): boolean {
-    return this.#imageModeExtension?.hasModifiedView() ?? false;
+    if (this.#imageModeExtension?.hasModifiedView() === true) {
+      return true;
+    }
+    return this.cameraHandler.hasModifiedCenter?.() ?? false;
   }
 
   public resetView(): void {
-    this.#imageModeExtension?.resetViewModifications();
+    if (this.#imageModeExtension?.hasModifiedView() === true) {
+      this.#imageModeExtension.resetViewModifications();
+    } else {
+      this.cameraHandler.resetCameraCenter?.();
+    }
     this.queueAnimationFrame();
   }
 
