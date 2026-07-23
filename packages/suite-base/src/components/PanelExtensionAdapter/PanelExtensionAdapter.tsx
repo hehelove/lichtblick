@@ -185,7 +185,11 @@ function PanelExtensionAdapter(
 
   const [slowRender, setSlowRender] = useState(false);
   const [, setDefaultPanelTitle] = useDefaultPanelTitle();
-  const { setAlert } = useAlertsActions();
+  const { setAlert, clearAlert } = useAlertsActions();
+
+  // Tracks the ids of alerts this panel has set (via unstable_setAlert) so they can be cleared
+  // when the panel unmounts. Alerts are namespaced by panelId to avoid collisions across panels.
+  const panelAlertIdsRef = useRef(new Set<string>());
 
   const { globalVariables, setGlobalVariables } = useGlobalVariables();
 
@@ -672,6 +676,20 @@ function PanelExtensionAdapter(
         setDefaultPanelTitle(title);
       },
 
+      unstable_setAlert: (alertId: string, alert) => {
+        if (!isMounted()) {
+          return;
+        }
+        const tag = `panel-alert:${panelId}:${alertId}`;
+        if (alert == undefined) {
+          panelAlertIdsRef.current.delete(alertId);
+          clearAlert(tag);
+        } else {
+          panelAlertIdsRef.current.add(alertId);
+          setAlert(tag, alert);
+        }
+      },
+
       /**
        * EXPERIMENTAL: Subscribe to message ranges for efficient batch processing.
        *
@@ -695,6 +713,36 @@ function PanelExtensionAdapter(
 
       unstable_setMessagePathDropConfig(dropConfig) {
         setMessagePathDropConfig(dropConfig);
+      },
+
+      getTopicSchema(topic: string) {
+        if (!isMounted()) {
+          return;
+        }
+
+        const ctx = getMessagePipelineContext();
+        const datatypes = ctx.playerState.activeData?.datatypes;
+        if (datatypes == undefined) {
+          return;
+        }
+        const schemaMap = getTopicToSchemaNameMap(ctx);
+        const schemaName = schemaMap[topic];
+        if (schemaName == undefined) {
+          return;
+        }
+        return datatypes.get(schemaName);
+      },
+
+      getSchema(schemaName: string) {
+        if (!isMounted()) {
+          return;
+        }
+        const ctx = getMessagePipelineContext();
+        const datatypes = ctx.playerState.activeData?.datatypes;
+        if (datatypes == undefined) {
+          return;
+        }
+        return datatypes.get(schemaName);
       },
     };
     // Disable this rule because the metadata function. If used, it will break.
@@ -720,6 +768,8 @@ function PanelExtensionAdapter(
     setDefaultPanelTitle,
     setMessagePathDropConfig,
     subscribeMessageRange,
+    setAlert,
+    clearAlert,
   ]);
 
   const panelContainerRef = useRef<HTMLDivElement>(ReactNull);
@@ -798,7 +848,19 @@ function PanelExtensionAdapter(
     getMessagePipelineContext,
     configTooNew,
     playerIsInitializing,
+    clearAlert,
   ]);
+
+  // Clear this panel's alerts on unmount.
+  useEffect(() => {
+    const panelAlertIds = panelAlertIdsRef.current;
+    return () => {
+      for (const alertId of panelAlertIds) {
+        clearAlert(`panel-alert:${panelId}:${alertId}`);
+      }
+      panelAlertIds.clear();
+    };
+  }, [panelId, clearAlert]);
 
   const style: CSSProperties = {};
   if (slowRender) {

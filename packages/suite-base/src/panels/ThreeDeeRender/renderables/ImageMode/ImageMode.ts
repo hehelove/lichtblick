@@ -1055,7 +1055,7 @@ export class ImageMode
         // remove any leading / so the image name doesn't start with _
         const topicName = topic.replace(/^\/+/, "");
         const fileName = `${topicName}-${stamp.sec}-${stamp.nsec}`;
-        void this.renderer.analytics?.logEvent(AppEvent.IMAGE_DOWNLOAD);
+        this.renderer.analytics?.logEvent(AppEvent.IMAGE_DOWNLOAD);
         if (this.renderer.testOptions.onDownloadImage) {
           this.renderer.testOptions.onDownloadImage(blob, fileName);
         } else {
@@ -1106,17 +1106,9 @@ const createFallbackCameraInfoForImage = (options: {
     R: [1, 0, 0, 0, 1, 0, 0, 0, 1],
     D: [],
     // prettier-ignore
-    K: [
-      fx, 0, cx,
-      0, fy, cy,
-      0, 0, 1,
-    ],
+    K: [fx, 0, cx, 0, fy, cy, 0, 0, 1],
     // prettier-ignore
-    P: [
-      fx, 0, cx, 0,
-      0, fy, cy, 0,
-      0, 0, 1, 0,
-    ],
+    P: [fx, 0, cx, 0, 0, fy, cy, 0, 0, 0, 1, 0],
   });
   return cameraInfo;
 };
