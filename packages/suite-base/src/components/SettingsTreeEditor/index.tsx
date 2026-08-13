@@ -24,6 +24,12 @@ import { usePanelStateStore } from "@lichtblick/suite-base/context/PanelStateCon
 import { PANEL_TITLE_CONFIG_KEY, getPanelTypeFromId } from "@lichtblick/suite-base/util/layout";
 
 import { NodeEditor } from "./NodeEditor";
+import {
+  encodeExpansionPath,
+  getExpansionStorageKey,
+  readExpansionPreferences,
+  writeExpansionPreferences,
+} from "./expansionStorage";
 import { filterTreeNodes, prepareSettingsNodes } from "./utils";
 
 const makeStablePath = memoizeWeak((key: string) => [key]);
@@ -44,6 +50,27 @@ export default function SettingsTreeEditor({
     return settings.nodes;
   }, [settings.nodes, filterText]);
 
+  const { selectedPanelIds } = useSelectedPanels();
+  const selectedPanelId = useMemo(
+    () => (selectedPanelIds.length === 1 ? selectedPanelIds[0] : undefined),
+    [selectedPanelIds],
+  );
+  const expansionStorageKey = getExpansionStorageKey(variant, selectedPanelId);
+  const expansionPreferences = useMemo(
+    () => readExpansionPreferences(expansionStorageKey),
+    [expansionStorageKey],
+  );
+  const getExpansionState = useCallback(
+    (path: readonly string[]) => expansionPreferences[encodeExpansionPath(path)],
+    [expansionPreferences],
+  );
+  const handleExpansionChange = useCallback(
+    ({ path, open }: { path: readonly string[]; open: boolean }) => {
+      expansionPreferences[encodeExpansionPath(path)] = open;
+      writeExpansionPreferences(expansionStorageKey, expansionPreferences);
+    },
+    [expansionPreferences, expansionStorageKey],
+  );
   const memoizedNodes = useMemo(() => {
     const preparedNodes = prepareSettingsNodes(filteredNodes);
     return preparedNodes.map(([key, root]) => ({
@@ -52,16 +79,19 @@ export default function SettingsTreeEditor({
       defaultOpen: root.defaultExpansionState !== "collapsed",
       filter: filterText,
       focusedPath,
+      getExpansionState,
+      onExpansionChange: handleExpansionChange,
       path: makeStablePath(key),
       settings: root,
     }));
-  }, [filteredNodes, actionHandler, filterText, focusedPath]);
-
-  const { selectedPanelIds } = useSelectedPanels();
-  const selectedPanelId = useMemo(
-    () => (selectedPanelIds.length === 1 ? selectedPanelIds[0] : undefined),
-    [selectedPanelIds],
-  );
+  }, [
+    filteredNodes,
+    actionHandler,
+    filterText,
+    focusedPath,
+    getExpansionState,
+    handleExpansionChange,
+  ]);
   const panelCatalog = usePanelCatalog();
   const panelType = useMemo(
     () => (selectedPanelId != undefined ? getPanelTypeFromId(selectedPanelId) : undefined),
@@ -157,7 +187,7 @@ export default function SettingsTreeEditor({
           </>
         )}
         {memoizedNodes.map((nodeProps) => (
-          <NodeEditor {...nodeProps} key={nodeProps.key} />
+          <NodeEditor {...nodeProps} key={`${expansionStorageKey}:${nodeProps.key}`} />
         ))}
       </div>
     </Stack>

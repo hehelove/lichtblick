@@ -43,6 +43,9 @@ function buildSeriesItems(
       lineSize: 1,
       messagePath: item.value,
       showLine: item.showLine ?? true,
+      yAxisID: item.yAxisID,
+      dynamicLabelField: item.dynamicLabelField,
+      dynamicValueField: item.dynamicValueField,
     } satisfies SeriesItem;
   });
 }
@@ -81,6 +84,59 @@ function buildPlayerState(
 }
 
 describe("TimestampDatasetsBuilder", () => {
+  it("expands dynamic values and inserts gaps for labels missing from a message", async () => {
+    const builder = new TimestampDatasetsBuilder();
+    builder.setSeries(buildSeriesItems([{ value: "/foo.values" }]));
+    builder.handlePlayerState(
+      buildPlayerState({
+        messages: [
+          {
+            topic: "/foo",
+            schemaName: "foo",
+            receiveTime: { sec: 0, nsec: 0 },
+            sizeInBytes: 0,
+            message: { values: [{ label: "a", value: 1 }] },
+          },
+          {
+            topic: "/foo",
+            schemaName: "foo",
+            receiveTime: { sec: 1, nsec: 0 },
+            sizeInBytes: 0,
+            message: { values: [{ label: "b", value: 2 }] },
+          },
+          {
+            topic: "/foo",
+            schemaName: "foo",
+            receiveTime: { sec: 2, nsec: 0 },
+            sizeInBytes: 0,
+            message: { values: [{ label: "a", value: 3 }] },
+          },
+        ],
+      }),
+    );
+
+    const result = await builder.getViewportDatasets({
+      size: { width: 1000, height: 1000 },
+      bounds: {},
+    });
+    expect(result.datasetsByConfigIndex).toEqual([
+      expect.objectContaining({
+        label: "a",
+        data: [
+          { x: 0, y: 1, value: 1 },
+          { x: 1, y: NaN, value: NaN },
+          { x: 2, y: 3, value: 3 },
+        ],
+      }),
+      expect.objectContaining({
+        label: "b",
+        data: [
+          { x: 1, y: 2, value: 2 },
+          { x: 2, y: NaN, value: NaN },
+        ],
+      }),
+    ]);
+  });
   it("should process current messages into a dataset", async () => {
     const builder = new TimestampDatasetsBuilder();
 
@@ -90,6 +146,7 @@ describe("TimestampDatasetsBuilder", () => {
           enabled: true,
           timestampMethod: "receiveTime",
           value: "/foo.val",
+          yAxisID: "y1",
         },
       ]),
     );
@@ -146,6 +203,7 @@ describe("TimestampDatasetsBuilder", () => {
       pathsWithMismatchedDataLengths: new Set(),
       datasetsByConfigIndex: [
         expect.objectContaining({
+          yAxisID: "y1",
           data: [
             { x: 0, y: 0, value: 0 },
             { x: 0.5, y: 1, value: 1 },
@@ -155,6 +213,91 @@ describe("TimestampDatasetsBuilder", () => {
         }),
       ],
     });
+  });
+
+  it("uses right-axis viewport bounds when downsampling a y1 series", async () => {
+    const builder = new TimestampDatasetsBuilder();
+    builder.setSeries(buildSeriesItems([{ value: "/foo.val", yAxisID: "y1", showLine: false }]));
+    builder.handlePlayerState(
+      buildPlayerState({
+        messages: [
+          {
+            topic: "/foo",
+            schemaName: "foo",
+            receiveTime: { sec: 0, nsec: 0 },
+            sizeInBytes: 0,
+            message: { val: 101 },
+          },
+          {
+            topic: "/foo",
+            schemaName: "foo",
+            receiveTime: { sec: 1, nsec: 0 },
+            sizeInBytes: 0,
+            message: { val: 102 },
+          },
+        ],
+      }),
+    );
+
+    const result = await builder.getViewportDatasets({
+      size: { width: 1, height: 100 },
+      bounds: {
+        x: { min: 0, max: 1 },
+        y: { min: 0, max: 10 },
+        y1: { min: 100, max: 110 },
+      },
+    });
+
+    expect(result.datasetsByConfigIndex[0]?.data.length).toBeGreaterThan(0);
+    expect(result.datasetsByConfigIndex[0]?.data.every(({ y }) => y >= 100 && y <= 110)).toBe(true);
+  });
+
+  it("should apply an object math function", async () => {
+    const builder = new TimestampDatasetsBuilder();
+    builder.setSeries(buildSeriesItems([{ value: "/foo.vector.@norm" }]));
+    builder.handlePlayerState(
+      buildPlayerState({
+        messages: [
+          {
+            topic: "/foo",
+            schemaName: "foo",
+            receiveTime: { sec: 1, nsec: 0 },
+            sizeInBytes: 0,
+            message: { vector: { x: 3, y: 4 } },
+          },
+        ],
+      }),
+    );
+
+    const result = await builder.getViewportDatasets({
+      size: { width: 1_000, height: 1_000 },
+      bounds: {},
+    });
+    expect(result.datasetsByConfigIndex[0]?.data).toEqual([{ x: 1, y: 5, value: 5 }]);
+  });
+
+  it("preserves scalar conversions when applying math modifiers", async () => {
+    const builder = new TimestampDatasetsBuilder();
+    builder.setSeries(buildSeriesItems([{ value: "/foo.values[:].@abs" }]));
+    builder.handlePlayerState(
+      buildPlayerState({
+        messages: [
+          {
+            topic: "/foo",
+            schemaName: "foo",
+            receiveTime: { sec: 1, nsec: 0 },
+            sizeInBytes: 0,
+            message: { values: [-2n, true, "3"] },
+          },
+        ],
+      }),
+    );
+
+    const result = await builder.getViewportDatasets({
+      size: { width: 1_000, height: 1_000 },
+      bounds: {},
+    });
+    expect(result.datasetsByConfigIndex[0]?.data.map(({ y }) => y)).toEqual([2, 1, 3]);
   });
 
   it("should create a discontinuity between current and full", async () => {

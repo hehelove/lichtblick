@@ -55,10 +55,10 @@ import {
   StudioLogsSettingsSidebar,
 } from "@lichtblick/suite-base/components/StudioLogsSettings";
 import { SyncAdapters } from "@lichtblick/suite-base/components/SyncAdapters";
-import { XsEvalEventsBridge } from "@lichtblick/suite-base/components/XsEvalEventsBridge";
 import { TopicList } from "@lichtblick/suite-base/components/TopicList";
 import VariablesList from "@lichtblick/suite-base/components/VariablesList";
 import { WorkspaceDialogs } from "@lichtblick/suite-base/components/WorkspaceDialogs";
+import { XsEvalEventsBridge } from "@lichtblick/suite-base/components/XsEvalEventsBridge";
 import { AllowedFileExtensions } from "@lichtblick/suite-base/constants/allowedFileExtensions";
 import { useAppContext } from "@lichtblick/suite-base/context/AppContext";
 import {

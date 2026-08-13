@@ -32,6 +32,7 @@ const OPTIONS_CHART: ChartOptionsPlot = {
 const SCALES_CHART: Record<string, Partial<Scale>> = {
   x: { min: 0, max: 100 },
   y: { min: 0, max: 100 },
+  y1: { min: 100, max: 200 },
 };
 
 jest.mock("chart.js", () => {
@@ -44,6 +45,12 @@ jest.mock("chart.js", () => {
         },
       },
       y: {
+        ticks: {
+          color: OPTIONS_CHART.tickColor,
+        },
+      },
+      y1: {
+        display: false,
         ticks: {
           color: OPTIONS_CHART.tickColor,
         },
@@ -121,6 +128,7 @@ describe("ChartRenderer", () => {
       scales: {
         x: { ticks: { tickColor: props.tickColor } },
         y: { ticks: { tickColor: props.tickColor } },
+        y1: { ticks: { tickColor: props.tickColor }, display: false },
       },
     };
     (getChartOptions as jest.Mock).mockReturnValue(chartOptions);
@@ -224,6 +232,31 @@ describe("ChartRenderer", () => {
       expect(chartInstance.options.scales!.y!.ticks?.display).toBe(true);
     });
 
+    it("should configure and display the right y-axis", () => {
+      const { action, chartRenderer } = setup({
+        actionOverride: {
+          showYAxisRight: true,
+          showYAxisLabelsRight: false,
+          yAxisLabelRight: "Temperature",
+          yBoundsRight: { min: -10, max: 50 },
+        },
+      });
+
+      chartRenderer.update(action);
+      const chartInstance: ChartType = (chartRenderer as any).getChartInstance();
+      const y1 = chartInstance.options.scales!.y1!;
+
+      expect(y1.display).toBe(true);
+      expect(y1.ticks?.display).toBe(false);
+      expect(y1.min).toBe(-10);
+      expect(y1.max).toBe(50);
+      expect(y1.title).toEqual({
+        display: true,
+        text: "Temperature",
+        color: OPTIONS_CHART.titleColor,
+      });
+    });
+
     it("should set x-axis title when provided in update action", () => {
       const xAxisLabel = BasicBuilder.string();
       const { action, chartRenderer } = setup({
@@ -269,7 +302,7 @@ describe("ChartRenderer", () => {
       expect(updateSpy).toHaveBeenCalledWith("none");
     });
 
-    it("should update returns x and y scales", () => {
+    it("should update returns x, y, and y1 scales", () => {
       const { action, chartRenderer } = setup();
 
       const chartUpdated = chartRenderer.update(action);
@@ -278,6 +311,8 @@ describe("ChartRenderer", () => {
       expect(chartUpdated?.x.max).toBe(SCALES_CHART.x!.max!);
       expect(chartUpdated?.y.min).toBe(SCALES_CHART.y!.min!);
       expect(chartUpdated?.y.max).toBe(SCALES_CHART.y!.max!);
+      expect(chartUpdated?.y1?.min).toBe(SCALES_CHART.y1!.min!);
+      expect(chartUpdated?.y1?.max).toBe(SCALES_CHART.y1!.max!);
     });
 
     it("should update returns undefined", () => {

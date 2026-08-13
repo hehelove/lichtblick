@@ -1,10 +1,17 @@
+// SPDX-FileCopyrightText: Copyright (C) 2023-2026 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
+// SPDX-License-Identifier: MPL-2.0
+
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at http://mozilla.org/MPL/2.0/
+
 // xs fork: 评测事件标记悬浮详情（对齐旧版 xs-ext-bootstrap 的 xs-ev-tip）。
 
+import { Fragment, type ReactPortal, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useLayoutEffect, useRef, useState } from "react";
 import { makeStyles } from "tss-react/mui";
 
-import { TimelinePositionedEvent } from "@lichtblick/suite-base/context/EventsContext";
+import type { TimelinePositionedEvent } from "@lichtblick/suite-base/context/EventsContext";
 
 const SEV_COLORS: Record<string, string> = {
   error: "#f5222d",
@@ -41,7 +48,7 @@ function eventDetailLines(ev: TimelinePositionedEvent): string[] {
   const meta: string[] = [];
   const cat = m.category;
   if (cat && CAT_LABEL[cat]) {
-    meta.push(CAT_LABEL[cat]!);
+    meta.push(CAT_LABEL[cat]);
   }
   const trackId = m.track_id;
   if (trackId) {
@@ -56,6 +63,8 @@ function eventDetailLines(ev: TimelinePositionedEvent): string[] {
   for (const k of keys) {
     const a = act[k];
     const t = thr[k];
+    // 值来自解析后的 JSON；保留既有的 String 展示格式。
+    // eslint-disable-next-line @typescript-eslint/no-base-to-string
     lines.push(`${k}: ${a != null ? String(a) : "-"} / 阈值 ${t != null ? String(t) : "-"}`);
   }
   return lines;
@@ -147,7 +156,7 @@ export function XsEvalEventTooltip({
   state,
 }: {
   state: XsEvalTooltipState | undefined;
-}): React.ReactPortal | ReactNull {
+}): ReactPortal | ReactNull {
   const { classes } = useStyles();
   const tipRef = useRef<HTMLDivElement>(ReactNull);
   const [pos, setPos] = useState<{ left: number; top: number } | undefined>();
@@ -187,10 +196,10 @@ export function XsEvalEventTooltip({
       }}
     >
       {state.events.map((ev, i) => (
-        <React.Fragment key={ev.event.id}>
+        <Fragment key={ev.event.id}>
           {i > 0 ? <div className={classes.divider} /> : undefined}
           <EventBlock ev={ev} />
-        </React.Fragment>
+        </Fragment>
       ))}
     </div>,
     document.body,

@@ -9,7 +9,12 @@ import {
 import MessageEventBuilder from "@lichtblick/suite-base/testing/builders/MessageEventBuilder";
 import { BasicBuilder } from "@lichtblick/test-builders";
 
-import { datasetContainsArray, stateTransitionPathDisplayName } from "./shared";
+import {
+  datasetContainsArray,
+  getDynamicFields,
+  getDynamicSeries,
+  stateTransitionPathDisplayName,
+} from "./shared";
 
 describe("stateTransitionPathDisplayName", () => {
   function buildStateTransitionPath(
@@ -93,5 +98,81 @@ describe("datasetContainsArray", () => {
   it("should return false for multiple MessageAndData[] elements with mixed queriedData lengths, including lengths less than or equal to 1", () => {
     const dataset: ImmutableDataset = [[createMessageAndData(2)], [createMessageAndData(1)]];
     expect(datasetContainsArray(dataset)).toBe(false);
+  });
+});
+
+describe("getDynamicSeries", () => {
+  it("expands object arrays in first-seen order with type-stable identities", () => {
+    const dataset: ImmutableDataset = [
+      [
+        {
+          messageEvent: MessageEventBuilder.messageEvent(),
+          queriedData: [
+            {
+              path: "/states",
+              value: [
+                { label: 1, value: "numeric" },
+                { label: "1", value: "string" },
+              ],
+            },
+          ],
+        },
+      ],
+    ];
+
+    expect(getDynamicSeries(dataset, "label", "value")).toEqual([
+      { identity: "number:1", label: "1" },
+      { identity: "string:1", label: "1" },
+    ]);
+  });
+
+  it("ignores entries without valid label and value fields", () => {
+    const dataset: ImmutableDataset = [
+      [
+        {
+          messageEvent: MessageEventBuilder.messageEvent(),
+          queriedData: [
+            {
+              path: "/states",
+              value: [
+                { label: "valid", value: true },
+                { label: "missing-value" },
+                { label: {}, value: 1 },
+              ],
+            },
+          ],
+        },
+      ],
+    ];
+
+    expect(getDynamicSeries(dataset, "label", "value")).toEqual([
+      { identity: "string:valid", label: "valid" },
+    ]);
+  });
+});
+
+describe("getDynamicFields", () => {
+  const path: StateTransitionPath = { value: "/states", timestampMethod: "receiveTime" };
+
+  it("uses label and value when either or both fields are blank", () => {
+    expect(getDynamicFields(path)).toEqual({ labelField: "label", valueField: "value" });
+    expect(getDynamicFields({ ...path, dynamicLabelField: "name" })).toEqual({
+      labelField: "name",
+      valueField: "value",
+    });
+    expect(getDynamicFields({ ...path, dynamicValueField: "state" })).toEqual({
+      labelField: "label",
+      valueField: "state",
+    });
+    expect(getDynamicFields({ ...path, dynamicLabelField: "", dynamicValueField: "" })).toEqual({
+      labelField: "label",
+      valueField: "value",
+    });
+  });
+
+  it("allows both defaults to be overridden", () => {
+    expect(
+      getDynamicFields({ ...path, dynamicLabelField: "name", dynamicValueField: "state" }),
+    ).toEqual({ labelField: "name", valueField: "state" });
   });
 });

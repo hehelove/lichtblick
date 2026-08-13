@@ -35,6 +35,8 @@ function buildSeriesItems(
       lineSize: 1,
       messagePath: item.value,
       showLine: true,
+      dynamicLabelField: item.dynamicLabelField,
+      dynamicValueField: item.dynamicValueField,
     } satisfies SeriesItem;
   });
 }
@@ -66,6 +68,42 @@ function buildPlayerState(activeDataOverride?: Partial<PlayerStateActiveData>): 
 }
 
 describe("CurrentCustomDatasetsBuilder", () => {
+  it("expands current custom-axis dynamic datasets", async () => {
+    const builder = new CurrentCustomDatasetsBuilder();
+    builder.setXPath(parseMessagePath("/foo.x[:]"));
+    builder.setSeries(buildSeriesItems([{ value: "/bar.values" }]));
+    builder.handlePlayerState(
+      buildPlayerState({
+        messages: [
+          {
+            topic: "/foo",
+            schemaName: "foo",
+            receiveTime: { sec: 0, nsec: 0 },
+            sizeInBytes: 0,
+            message: { x: [10, 20] },
+          },
+          {
+            topic: "/bar",
+            schemaName: "foo",
+            receiveTime: { sec: 0, nsec: 0 },
+            sizeInBytes: 0,
+            message: {
+              values: [
+                { label: "a", value: 4 },
+                { label: "b", value: 5 },
+              ],
+            },
+          },
+        ],
+      }),
+    );
+
+    const result = await builder.getViewportDatasets();
+    expect(result.datasetsByConfigIndex).toEqual([
+      expect.objectContaining({ label: "a", data: [expect.objectContaining({ x: 10, y: 4 })] }),
+      expect.objectContaining({ label: "b", data: [expect.objectContaining({ x: 20, y: 5 })] }),
+    ]);
+  });
   it("should apply a math function", async () => {
     const builder = new CurrentCustomDatasetsBuilder();
 
@@ -118,6 +156,71 @@ describe("CurrentCustomDatasetsBuilder", () => {
         }),
       ],
     });
+  });
+
+  it("preserves scalar conversions when applying math modifiers", async () => {
+    const builder = new CurrentCustomDatasetsBuilder();
+    builder.setXPath(parseMessagePath("/foo.values[:].@abs"));
+    builder.setSeries(buildSeriesItems([{ value: "/bar.values[:].@abs" }]));
+    builder.handlePlayerState(
+      buildPlayerState({
+        messages: [
+          {
+            topic: "/foo",
+            schemaName: "foo",
+            receiveTime: { sec: 0, nsec: 0 },
+            sizeInBytes: 0,
+            message: { values: [-4n, false, "6"] },
+          },
+          {
+            topic: "/bar",
+            schemaName: "bar",
+            receiveTime: { sec: 0, nsec: 0 },
+            sizeInBytes: 0,
+            message: { values: [-2n, true, "3"] },
+          },
+        ],
+      }),
+    );
+
+    const result = await builder.getViewportDatasets();
+    expect(result.datasetsByConfigIndex[0]?.data.map(({ x, y }) => ({ x, y }))).toEqual([
+      { x: 4, y: 2 },
+      { x: 0, y: 1 },
+      { x: 6, y: 3 },
+    ]);
+  });
+
+  it("should apply object math functions without passing objects through identity", async () => {
+    const builder = new CurrentCustomDatasetsBuilder();
+    builder.setXPath(parseMessagePath("/foo.vector.@norm"));
+    builder.setSeries(buildSeriesItems([{ value: "/bar.rotation.@ypr" }]));
+
+    builder.handlePlayerState(
+      buildPlayerState({
+        messages: [
+          {
+            topic: "/foo",
+            schemaName: "foo",
+            receiveTime: { sec: 0, nsec: 0 },
+            sizeInBytes: 0,
+            message: { vector: { x: 3, y: 4 } },
+          },
+          {
+            topic: "/bar",
+            schemaName: "bar",
+            receiveTime: { sec: 0, nsec: 0 },
+            sizeInBytes: 0,
+            message: { rotation: { x: 0, y: 0, z: Math.SQRT1_2, w: Math.SQRT1_2 } },
+          },
+        ],
+      }),
+    );
+
+    const result = await builder.getViewportDatasets();
+    expect(result.datasetsByConfigIndex[0]?.data[0]).toEqual(
+      expect.objectContaining({ x: 5, y: expect.closeTo(90), value: expect.closeTo(90) }),
+    );
   });
 
   it("supports toggling series enabled state", async () => {

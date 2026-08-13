@@ -59,7 +59,7 @@ type UpdateSeriesFullAction = {
 
 type UpdateSeriesConfigAction = {
   type: "update-series-config";
-  seriesItems: SeriesItem[];
+  seriesItems: Immutable<SeriesItem[]>;
 };
 
 export type UpdateDataAction =
@@ -95,6 +95,10 @@ export class TimestampDatasetsBuilderImpl {
         pointHoverRadius: 3,
         pointBackgroundColor: showLine ? contrastColor : color,
         pointBorderColor: "transparent",
+        yAxisID: series.config.yAxisID ?? "y",
+        label: series.config.subLabel,
+        seriesIdentity: series.config.compositeKey,
+        configIndex: series.config.configIndex,
         data: [],
       };
 
@@ -164,6 +168,8 @@ export class TimestampDatasetsBuilderImpl {
       }
 
       const items = allData.slice(startIdx, endIdx + 1);
+      const viewportYBounds =
+        series.config.yAxisID === "y1" ? viewport.bounds.y1 : viewport.bounds.y;
 
       const downsampleViewport = {
         width: viewport.size.width,
@@ -174,8 +180,8 @@ export class TimestampDatasetsBuilderImpl {
             max: viewport.bounds.x?.max ?? xBounds.max,
           },
           y: {
-            min: viewport.bounds.y?.min ?? yBounds.min,
-            max: viewport.bounds.y?.max ?? yBounds.max,
+            min: viewportYBounds?.min ?? yBounds.min,
+            max: viewportYBounds?.max ?? yBounds.max,
           },
         },
       };

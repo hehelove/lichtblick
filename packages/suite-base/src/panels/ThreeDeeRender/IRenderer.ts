@@ -117,6 +117,8 @@ export type ImageModeConfig = Partial<ColorModeSettings> & {
 };
 
 export type RendererConfig = {
+  /** Synchronize enabled 3D topics by their message timestamps. */
+  topicsSynchronize?: boolean;
   /** Camera settings for the currently rendering scene */
   cameraState: CameraState;
   /** Coordinate frameId of the rendering frame */
@@ -361,6 +363,8 @@ export interface IRenderer extends EventEmitter<RendererEvents> {
    * of the topics list changes */
   setTopics(topics: ReadonlyArray<Topic> | undefined): void;
 
+  setSynchronizedTopics(topics: ReadonlySet<string>): void;
+
   setParameters(parameters: Immutable<Map<string, ParameterValue>> | undefined): void;
 
   updateCustomLayersCount(): void;
@@ -382,6 +386,7 @@ export interface IRenderer extends EventEmitter<RendererEvents> {
     messageEvent: Readonly<MessageEvent>,
     options?: Partial<AddMessageEventOptions>,
   ): void;
+  addMessageEventBatch(messageEvents: readonly MessageEvent[]): void;
 
   /**  Set desired render/display frame, will render using fallback if id is undefined or frame does not exist */
   setFollowFrameId(frameId: string | undefined): void;

@@ -45,6 +45,13 @@ export type SeriesItem = {
   showLine: boolean;
   lineSize: number;
   enabled: boolean;
+  yAxisID?: "y" | "y1";
+  dynamicLabelField?: string;
+  dynamicValueField?: string;
+  dynamicColorOverride?: boolean;
+  dynamicParentConfigIndex?: number;
+  compositeKey?: string;
+  subLabel?: string;
 };
 
 export type Viewport = {
@@ -55,6 +62,7 @@ export type Viewport = {
   bounds: {
     x?: Partial<Bounds1D>;
     y?: Partial<Bounds1D>;
+    y1?: Partial<Bounds1D>;
   };
   /** The pixel size of the viewport */
   size: Size;
@@ -112,6 +120,10 @@ interface IDatasetsBuilder {
   ): void;
 
   setSeries(series: Immutable<SeriesItem[]>): void;
+
+  setDynamicSeriesEnabled?(identity: string, options: { enabled: boolean }): void;
+
+  getDynamicSeries?(): Immutable<SeriesItem[]>;
 
   /**
    * Optional: return the x-axis topic name if this builder uses a separate x-axis topic

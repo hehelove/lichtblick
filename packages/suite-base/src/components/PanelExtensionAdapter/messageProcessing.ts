@@ -165,7 +165,7 @@ function emitConverterError(
 ): void {
   const error = e instanceof Error ? e : new Error(typeof e === "string" ? e : JSON.stringify(e));
   context?.emitAlert?.(
-    converter as Immutable<InstalledMessageConverter>,
+    converter,
     {
       severity: "error",
       message: `Uncaught error in topic converter (${converter.extensionId}) at ${formatTimeRaw(messageEvent.receiveTime)}`,

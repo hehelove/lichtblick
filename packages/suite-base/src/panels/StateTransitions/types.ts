@@ -15,8 +15,15 @@ export type StateTransitionPath = {
   color?: string;
   value: string;
   label?: string;
+  dynamicLabelField?: string;
+  dynamicValueField?: string;
   enabled?: boolean;
   timestampMethod: TimestampMethod;
+};
+
+export type DynamicStateTransitionSeries = {
+  identity: string;
+  label: string;
 };
 
 export type StateTransitionConfig = {
@@ -35,8 +42,8 @@ export type StateTransitionPanelProps = {
 };
 
 export type PathLegendProps = {
-  paths: StateTransitionPath[];
-  heightPerTopic: number;
+  pathState: PathState[];
+  heightPerRow: number;
   setFocusedPath: (value: string[] | undefined) => void;
   saveConfig: SaveConfig<StateTransitionConfig>;
 };
@@ -49,6 +56,7 @@ export type PathState = {
   path: StateTransitionPath;
   // Whether the data the path refers to resolves to more than one value
   isArray: boolean;
+  dynamicSeries?: DynamicStateTransitionSeries[];
 };
 
 export type AxisTreeField = {
@@ -71,6 +79,12 @@ export type MessageDatasetArgs = {
   pathIndex: number;
   blocks: readonly (readonly MessageAndData[] | undefined)[];
   showPoints: boolean;
+  dynamicSeries?: DynamicStateTransitionSeries;
+};
+
+export type DynamicMessageDatasetsArgs = Omit<MessageDatasetArgs, "dynamicSeries" | "y"> & {
+  dynamicSeries: readonly DynamicStateTransitionSeries[];
+  yValues: readonly number[];
 };
 
 export type ValidQueriedDataValue = number | string | boolean | bigint;

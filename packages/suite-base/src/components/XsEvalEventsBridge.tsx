@@ -1,8 +1,22 @@
+// SPDX-FileCopyrightText: Copyright (C) 2023-2026 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
+// SPDX-License-Identifier: MPL-2.0
+
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at http://mozilla.org/MPL/2.0/
+
 // xs fork: 从 URL ?xsEvents= 拉取平台评测事件，注入 EventsContext 供 EventsOverlay / EventsList 使用。
 
 import { useEffect, useMemo } from "react";
 
-import { add as addTimes, fromSec, subtract as subtractTimes, toNanoSec, toSec, Time } from "@lichtblick/rostime";
+import {
+  add as addTimes,
+  fromSec,
+  subtract as subtractTimes,
+  toNanoSec,
+  toSec,
+  Time,
+} from "@lichtblick/rostime";
 import {
   MessagePipelineContext,
   useMessagePipeline,
@@ -14,17 +28,16 @@ import {
 } from "@lichtblick/suite-base/context/EventsContext";
 
 type CaseEvent = {
-  id: number;
-  frac: number;
-  tns: number;
-  type: string;
-  severity: string;
-  message: string;
-  category?: string;
-  trackId?: number;
-  source?: string;
-  threshold?: Record<string, unknown>;
-  actual?: Record<string, unknown>;
+  id?: unknown;
+  frac?: unknown;
+  type?: unknown;
+  severity?: unknown;
+  message?: unknown;
+  category?: unknown;
+  trackId?: unknown;
+  source?: unknown;
+  threshold?: unknown;
+  actual?: unknown;
 };
 
 function getXsEventsUrl(): string {
@@ -35,14 +48,12 @@ function getXsEventsUrl(): string {
   }
 }
 
-function metaString(v: unknown): string {
-  if (v == null) {
-    return "";
-  }
-  if (typeof v === "object") {
-    return JSON.stringify(v) ?? "";
-  }
-  return String(v);
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value != null && typeof value === "object" && !Array.isArray(value);
+}
+
+function metaString(v: Record<string, unknown>): string {
+  return JSON.stringify(v) ?? "";
 }
 
 function caseEventToPositioned(
@@ -51,34 +62,35 @@ function caseEventToPositioned(
   playerEnd: Time,
 ): TimelinePositionedEvent {
   const durationSec = toSec(subtractTimes(playerEnd, playerStart));
-  const frac = Math.max(0, Math.min(1, ev.frac ?? 0));
+  const frac =
+    typeof ev.frac === "number" && Number.isFinite(ev.frac) ? Math.max(0, Math.min(1, ev.frac)) : 0;
   const startTime = addTimes(playerStart, fromSec(frac * durationSec));
   const startSec = toSec(startTime);
 
   const metadata: Record<string, string> = {
-    type: ev.type ?? "",
-    severity: ev.severity ?? "info",
-    message: ev.message ?? "",
+    type: typeof ev.type === "string" ? ev.type : "",
+    severity: typeof ev.severity === "string" ? ev.severity : "info",
+    message: typeof ev.message === "string" ? ev.message : "",
   };
-  if (ev.category) {
+  if (typeof ev.category === "string" && ev.category) {
     metadata.category = ev.category;
   }
-  if (ev.trackId != null) {
+  if (typeof ev.trackId === "number" && Number.isFinite(ev.trackId)) {
     metadata.track_id = String(ev.trackId);
   }
-  if (ev.source) {
+  if (typeof ev.source === "string" && ev.source) {
     metadata.source = ev.source;
   }
-  if (ev.threshold && Object.keys(ev.threshold).length > 0) {
+  if (isRecord(ev.threshold) && Object.keys(ev.threshold).length > 0) {
     metadata.threshold = metaString(ev.threshold);
   }
-  if (ev.actual && Object.keys(ev.actual).length > 0) {
+  if (isRecord(ev.actual) && Object.keys(ev.actual).length > 0) {
     metadata.actual = metaString(ev.actual);
   }
 
   return {
     event: {
-      id: `eval-${ev.id}`,
+      id: `eval-${typeof ev.id === "number" && Number.isFinite(ev.id) ? ev.id : 0}`,
       createdAt: "",
       deviceId: "xs-eval",
       durationNanos: "0",
@@ -94,6 +106,21 @@ function caseEventToPositioned(
     endPosition: frac,
     secondsSinceStart: frac * durationSec,
   };
+}
+
+export function caseEventsToPositioned(
+  data: unknown,
+  playerStart: Time,
+  playerEnd: Time,
+): TimelinePositionedEvent[] {
+  if (!isRecord(data) || !Array.isArray(data.list)) {
+    return [];
+  }
+
+  return data.list
+    .filter(isRecord)
+    .map((event) => caseEventToPositioned(event, playerStart, playerEnd))
+    .sort((a, b) => a.startPosition - b.startPosition);
 }
 
 const selectStartTime = (ctx: MessagePipelineContext) => ctx.playerState.activeData?.startTime;
@@ -135,14 +162,12 @@ export function XsEvalEventsBridge(): ReactNull {
     const load = () => {
       setEvents({ loading: true });
       void fetch(eventsUrl)
-        .then((r) => (r.ok ? r.json() : { list: [] }))
-        .then((d: { list?: CaseEvent[] }) => {
+        .then(async (r): Promise<unknown> => (r.ok ? await r.json() : { list: [] }))
+        .then((data: unknown) => {
           if (cancelled) {
             return;
           }
-          const list = d.list ?? [];
-          const positioned = list.map((ev) => caseEventToPositioned(ev, startTime, endTime));
-          positioned.sort((a, b) => a.startPosition - b.startPosition);
+          const positioned = caseEventsToPositioned(data, startTime, endTime);
           setEvents({ loading: false, value: positioned });
         })
         .catch((err: unknown) => {

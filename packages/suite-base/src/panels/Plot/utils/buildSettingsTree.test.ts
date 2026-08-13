@@ -36,6 +36,8 @@ describe("buildSettingsTree", () => {
     expect(tree.legend?.fields?.legendDisplay?.value).toBe(config.legendDisplay);
     expect(tree.yAxis?.fields?.minYValue?.value).toBe(config.minYValue);
     expect(tree.yAxis?.fields?.maxYValue?.value).toBe(config.maxYValue);
+    expect(tree.yAxisRight?.fields?.minYValueRight?.value).toBe(config.minYValueRight);
+    expect(tree.yAxisRight?.fields?.maxYValueRight?.value).toBe(config.maxYValueRight);
     expect(tree.xAxis?.fields?.minXValue?.value).toBe(config.minXValue);
     expect(tree.xAxis?.fields?.maxXValue?.value).toBe(config.maxXValue);
 
@@ -56,6 +58,13 @@ describe("buildSettingsTree", () => {
     expect(children0?.fields!["lineSize"]).toBeDefined();
     expect(children0?.fields!["showLine"]).toBeDefined();
     expect(children0?.fields!["timestampMethod"]).toBeDefined();
+    expect(children0?.fields!["yAxisID"]).toEqual(expect.objectContaining({ value: "y" }));
+    expect(children0?.fields!["dynamicLabelField"]).toEqual(
+      expect.objectContaining({ placeholder: "label" }),
+    );
+    expect(children0?.fields!["dynamicValueField"]).toEqual(
+      expect.objectContaining({ placeholder: "value" }),
+    );
     expect(children0?.fields!["value"]).toEqual(
       expect.objectContaining({
         supportsMathModifiers: true,
@@ -123,6 +132,14 @@ describe("buildSettingsTree", () => {
 
     const tree = buildSettingsTree(config, t);
     expect(tree.xAxis?.fields?.maxXValue?.error).toBe("maxXError");
+  });
+
+  it("should set an error when right Y max is less than or equal to min", () => {
+    const config = PlotBuilder.config({ minYValueRight: 10, maxYValueRight: 5, paths: [] });
+
+    const tree = buildSettingsTree(config, t);
+
+    expect(tree.yAxisRight?.fields?.maxYValueRight?.error).toBe("maxYRightError");
   });
 
   it("should include xAxisLabel field with provided value", () => {

@@ -5,13 +5,11 @@
 // License, v2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/
 
-import * as _ from "lodash-es";
-
 import { filterMap } from "@lichtblick/den/collection";
 import { MessagePath } from "@lichtblick/message-path";
 import { Immutable } from "@lichtblick/suite";
 import { simpleGetMessagePathDataItems } from "@lichtblick/suite-base/components/MessagePathSyntax/simpleGetMessagePathDataItems";
-import { mathFunctions } from "@lichtblick/suite-base/panels/Plot/utils/mathFunctions";
+import { getMathFunction } from "@lichtblick/suite-base/panels/Plot/utils/mathFunctions";
 import { PlayerState } from "@lichtblick/suite-base/players/types";
 
 import {
@@ -25,6 +23,7 @@ import {
 import { CurrentFrameSeriesItem } from "./types";
 import { buildViewportDatasets, lastMatchingTopic, setSeries } from "./utils";
 import { getChartValue, isChartValue } from "../utils/datum";
+import { DynamicSeriesResolver, isDynamicSeries } from "../utils/dynamicSeries";
 
 /**
  * CurrentCustomDatasetsBuilder builds datasets from a custom x-axis message path and
@@ -37,6 +36,8 @@ export class CurrentCustomDatasetsBuilder implements IDatasetsBuilder {
 
   #seriesByKey = new Map<SeriesConfigKey, CurrentFrameSeriesItem>();
   #pathsWithMismatchedDataLengths = new Set<string>();
+  readonly #dynamicResolver = new DynamicSeriesResolver();
+  #parents: Immutable<SeriesItem[]> = [];
 
   // Process the latest messages from the player state to extract any updated x or y values
   //
@@ -55,9 +56,7 @@ export class CurrentCustomDatasetsBuilder implements IDatasetsBuilder {
 
     let datasetsChanged = false;
     {
-      const xAxisMathFn =
-        (this.#xParsedPath.modifier ? mathFunctions[this.#xParsedPath.modifier] : undefined) ??
-        _.identity<number>;
+      const xAxisMathFn = getMathFunction(this.#xParsedPath.modifier);
 
       const msgEvent = lastMatchingTopic(msgEvents, this.#xParsedPath.topicName);
       if (msgEvent) {
@@ -66,6 +65,11 @@ export class CurrentCustomDatasetsBuilder implements IDatasetsBuilder {
         datasetsChanged ||= items.length > 0;
         this.#xValues = [];
         for (const item of items) {
+          if (xAxisMathFn) {
+            this.#xValues.push(xAxisMathFn(item));
+            continue;
+          }
+
           if (!isChartValue(item)) {
             continue;
           }
@@ -75,13 +79,13 @@ export class CurrentCustomDatasetsBuilder implements IDatasetsBuilder {
             continue;
           }
 
-          this.#xValues.push(xAxisMathFn(chartValue));
+          this.#xValues.push(chartValue);
         }
       }
     }
 
     for (const series of this.#seriesByKey.values()) {
-      const mathFn = series.parsed.modifier ? mathFunctions[series.parsed.modifier] : undefined;
+      const mathFn = getMathFunction(series.parsed.modifier);
 
       const msgEvent = lastMatchingTopic(msgEvents, series.parsed.topicName);
       if (!msgEvent) {
@@ -92,19 +96,26 @@ export class CurrentCustomDatasetsBuilder implements IDatasetsBuilder {
       datasetsChanged ||= items.length > 0;
 
       const pathItems = filterMap(items, (item, idx) => {
+        if (mathFn) {
+          const mathModified = mathFn(item);
+          return {
+            x: this.#xValues[idx] ?? NaN,
+            y: mathModified,
+            receiveTime: msgEvent.receiveTime,
+            value: mathModified,
+          };
+        }
+
         if (!isChartValue(item)) {
           return;
         }
 
         const chartValue = getChartValue(item);
-        const mathModifiedValue =
-          mathFn && chartValue != undefined ? mathFn(chartValue) : undefined;
-
         return {
           x: this.#xValues[idx] ?? NaN,
-          y: chartValue == undefined ? NaN : (mathModifiedValue ?? chartValue),
+          y: chartValue ?? NaN,
           receiveTime: msgEvent.receiveTime,
-          value: mathModifiedValue ?? item,
+          value: item,
         };
       });
 
@@ -115,6 +126,37 @@ export class CurrentCustomDatasetsBuilder implements IDatasetsBuilder {
       }
 
       series.dataset.data = pathItems;
+    }
+
+    for (const parent of this.#parents) {
+      const msgEvent = lastMatchingTopic(msgEvents, parent.parsed.topicName);
+      if (!msgEvent) {
+        continue;
+      }
+      const values = new Map<string, ReturnType<DynamicSeriesResolver["resolve"]>[number]>();
+      for (const item of simpleGetMessagePathDataItems(msgEvent, parent.parsed)) {
+        for (const value of this.#dynamicResolver.resolve(parent, item)) {
+          values.set(value.identity, value);
+        }
+      }
+      if (!isDynamicSeries(parent) && values.size === 0) {
+        continue;
+      }
+      this.#seriesByKey = setSeries(this.#seriesByKey, this.#dynamicResolver.getSeries());
+      for (const child of this.#dynamicResolver.getChildren(parent.key)) {
+        const value = values.get(child.compositeKey!);
+        this.#seriesByKey.get(child.key)!.dataset.data = value
+          ? [
+              {
+                x: this.#xValues[value.sourceIndex] ?? NaN,
+                y: value.value,
+                value: value.value,
+                receiveTime: msgEvent.receiveTime,
+              },
+            ]
+          : [];
+      }
+      datasetsChanged = true;
     }
 
     return {
@@ -137,7 +179,18 @@ export class CurrentCustomDatasetsBuilder implements IDatasetsBuilder {
   }
 
   public setSeries(series: Immutable<SeriesItem[]>): void {
-    this.#seriesByKey = setSeries(this.#seriesByKey, series);
+    this.#parents = series;
+    this.#dynamicResolver.setSeries(series);
+    this.#seriesByKey = setSeries(this.#seriesByKey, this.#dynamicResolver.getSeries());
+  }
+
+  public setDynamicSeriesEnabled(identity: string, options: { enabled: boolean }): void {
+    this.#dynamicResolver.setEnabled(identity, options);
+    this.#seriesByKey = setSeries(this.#seriesByKey, this.#dynamicResolver.getSeries());
+  }
+
+  public getDynamicSeries(): Immutable<SeriesItem[]> {
+    return this.#dynamicResolver.getSeries().filter((item) => item.compositeKey != undefined);
   }
 
   // We don't use the viewport because we do not do any downsampling on the assumption that

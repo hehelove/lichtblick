@@ -25,6 +25,9 @@ export type PlotPath = BasePlotPath & {
   timestampMethod: TimestampMethod;
   showLine?: boolean;
   lineSize?: number;
+  yAxisID?: "y" | "y1";
+  dynamicLabelField?: string;
+  dynamicValueField?: string;
 };
 
 export type PlotXAxisVal =
@@ -75,7 +78,15 @@ type DeprecatedPlotConfig = {
   sidebarWidth?: number;
 };
 
-export type PlotLegendDisplay = "floating" | "top" | "left" | "none";
+export type PlotLegendDisplay =
+  | "floating"
+  | "top"
+  | "left"
+  | "none"
+  | "topLeft"
+  | "topRight"
+  | "bottomLeft"
+  | "bottomRight";
 
 export type PlotConfig = DeprecatedPlotConfig & {
   paths: PlotPath[];
@@ -83,16 +94,20 @@ export type PlotConfig = DeprecatedPlotConfig & {
   maxXValue?: number;
   minYValue?: string | number;
   maxYValue?: string | number;
+  minYValueRight?: string | number;
+  maxYValueRight?: string | number;
   showLegend: boolean;
   legendDisplay: PlotLegendDisplay;
   showPlotValuesInLegend: boolean;
   showXAxisLabels: boolean;
   showYAxisLabels: boolean;
+  showYAxisLabelsRight?: boolean;
   isSynced: boolean;
   xAxisVal: PlotXAxisVal;
   xAxisPath?: BasePlotPath;
   xAxisLabel?: string;
   yAxisLabel?: string;
+  yAxisLabelRight?: string;
   followingViewWidth?: number;
   sidebarDimension: number;
   [PANEL_TITLE_CONFIG_KEY]?: string;

@@ -98,11 +98,19 @@ export const handleDropNode = (
 };
 
 function NodeEditorComponent(props: Readonly<NodeEditorProps>): React.JSX.Element {
-  const { actionHandler, defaultOpen = true, filter, focusedPath, settings = {} } = props;
+  const {
+    actionHandler,
+    defaultOpen = true,
+    filter,
+    focusedPath,
+    getExpansionState,
+    onExpansionChange,
+    settings = {},
+  } = props;
   const [state, setState] = useImmer<NodeEditorState>({
     editing: false,
     focusedPath: undefined,
-    open: defaultOpen,
+    open: getExpansionState?.(props.path) ?? defaultOpen,
     textFilter: "",
     visibilityFilter: "all",
   });
@@ -185,21 +193,15 @@ function NodeEditorComponent(props: Readonly<NodeEditorProps>): React.JSX.Elemen
   };
 
   const isFocused = _.isEqual(focusedPath, props.path);
+  const isOnFocusedPath =
+    focusedPath != undefined && _.isEqual(props.path, focusedPath.slice(0, props.path.length));
+  const open = state.open || isOnFocusedPath;
 
   useEffect(() => {
-    const isOnFocusedPath =
-      focusedPath != undefined && _.isEqual(props.path, focusedPath.slice(0, props.path.length));
-
-    if (isOnFocusedPath) {
-      setState((draft) => {
-        draft.open = true;
-      });
-    }
-
     if (isFocused) {
       rootRef.current?.scrollIntoView();
     }
-  }, [focusedPath, isFocused, props.path, setState]);
+  }, [isFocused]);
 
   const { fields, children } = settings;
   const hasChildren = children != undefined && Object.keys(children).length > 0;
@@ -261,12 +263,22 @@ function NodeEditorComponent(props: Readonly<NodeEditorProps>): React.JSX.Elemen
         defaultOpen={child.defaultExpansionState !== "collapsed"}
         filter={filter}
         focusedPath={focusedPath}
+        getExpansionState={getExpansionState}
         key={key}
+        onExpansionChange={onExpansionChange}
         settings={child}
         path={makeStablePath(props.path, key)}
       />
     ));
-  }, [filteredNodes, actionHandler, filter, focusedPath, props.path]);
+  }, [
+    filteredNodes,
+    actionHandler,
+    filter,
+    focusedPath,
+    getExpansionState,
+    onExpansionChange,
+    props.path,
+  ]);
 
   const IconComponent = settings.icon ? icons[settings.icon] : undefined;
 
@@ -289,12 +301,16 @@ function NodeEditorComponent(props: Readonly<NodeEditorProps>): React.JSX.Elemen
   }, [setState]);
 
   const toggleOpen = useCallback(() => {
+    if (state.editing) {
+      return;
+    }
+
+    const nextOpen = !open;
     setState((draft) => {
-      if (!draft.editing) {
-        draft.open = !draft.open;
-      }
+      draft.open = nextOpen;
     });
-  }, [setState]);
+    onExpansionChange?.({ path: props.path, open: nextOpen });
+  }, [onExpansionChange, open, props.path, setState, state.editing]);
 
   const onLabelKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
@@ -408,7 +424,7 @@ function NodeEditorComponent(props: Readonly<NodeEditorProps>): React.JSX.Elemen
           data-testid={`settings__nodeHeaderToggle__${props.path.join("-")}`}
         >
           {dragHandleIcon}
-          {hasProperties && <ExpansionArrow expanded={state.open} />}
+          {hasProperties && <ExpansionArrow expanded={open} />}
           {iconItem}
           {state.editing ? (
             <TextField
@@ -514,14 +530,14 @@ function NodeEditorComponent(props: Readonly<NodeEditorProps>): React.JSX.Elemen
           )}
         </Stack>
       </div>
-      {state.open && fieldEditors.length > 0 && (
+      {open && fieldEditors.length > 0 && (
         <>
           <div className={classes.fieldPadding} />
           {fieldEditors}
           <div className={classes.fieldPadding} />
         </>
       )}
-      {state.open && selectVisibilityFilterEnabled && hasChildren && (
+      {open && selectVisibilityFilterEnabled && hasChildren && (
         <>
           <Stack paddingBottom={0.5} style={{ gridColumn: "span 2" }} />
           <FieldEditor
@@ -544,7 +560,7 @@ function NodeEditorComponent(props: Readonly<NodeEditorProps>): React.JSX.Elemen
           />
         </>
       )}
-      {state.open && childNodes}
+      {open && childNodes}
       {indent === 1 && <Divider style={{ gridColumn: "span 2" }} />}
     </>
   );

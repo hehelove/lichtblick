@@ -92,6 +92,18 @@ describe("handleUpdateAction", () => {
     );
   });
 
+  it("should update right y-axis settings", () => {
+    const input: HandleUpdateAction = {
+      draft: PlotBuilder.config({ paths: [] }),
+      path: ["yAxisRight", "minYValueRight"],
+      value: -10,
+    };
+
+    handleUpdateAction(input);
+
+    expect(input.draft.minYValueRight).toBe(-10);
+  });
+
   it("should update minXValue and maxXValue to undefined", () => {
     const initialConfig = PlotBuilder.config({ paths: [] });
     const input: HandleUpdateAction = {

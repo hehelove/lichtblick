@@ -11,6 +11,10 @@ export const stateTransitions = {
     addSeries: "Add series",
     axisLabel: "Axis label",
     deleteSeries: "Delete series",
+    dynamicFieldsHelp:
+      "Object arrays are expanded automatically. Override these fields when their keys are not label and value.",
+    dynamicLabelField: "Dynamic label field",
+    dynamicValueField: "Dynamic value field",
     general: "General",
     helpGeneral: "Display a point for every state transition message",
     label: "Label",

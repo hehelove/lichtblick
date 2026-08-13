@@ -6,12 +6,14 @@
 import "@testing-library/jest-dom";
 import { userEvent } from "@storybook/testing-library";
 import { render, screen } from "@testing-library/react";
+import { EventEmitter } from "eventemitter3";
 import { useMemo } from "react";
 
 import PanelContext from "@lichtblick/suite-base/components/PanelContext";
 import { useSelectedPanels } from "@lichtblick/suite-base/context/CurrentLayoutContext";
 import { BasicBuilder } from "@lichtblick/test-builders";
 
+import { PlotCoordinator } from "./PlotCoordinator";
 import { PlotLegend } from "./PlotLegend";
 
 const defaultProps = {
@@ -110,6 +112,20 @@ describe("PlotLegend", () => {
     expect(mockSaveConfig).toHaveBeenCalledWith({ showLegend: true });
   });
 
+  it.each([
+    "topLeft",
+    "topRight",
+    "bottomLeft",
+    "bottomRight",
+  ] as const)("toggles the legend in the %s corner", async (legendDisplay) => {
+    const mockSaveConfig = jest.fn();
+    setup({ legendDisplay, saveConfig: mockSaveConfig });
+
+    await userEvent.setup().click(screen.getByRole("button", { name: "Hide legend" }));
+
+    expect(mockSaveConfig).toHaveBeenCalledWith({ showLegend: false });
+  });
+
   it("renders paths from props", () => {
     const paths = [
       { value: path, enabled: true },
@@ -130,5 +146,30 @@ describe("PlotLegend", () => {
     await userEvent.setup().click(screen.getByText(path));
 
     expect(mockOnClickPath).toHaveBeenCalledWith(0);
+  });
+
+  it("keeps the dynamic parent editable and toggles children without saving config", async () => {
+    const coordinator = new EventEmitter() as PlotCoordinator;
+    const setDynamicSeriesEnabled = jest.fn();
+    coordinator.setDynamicSeriesEnabled = setDynamicSeriesEnabled;
+    const saveConfig = jest.fn();
+    setup({
+      coordinator,
+      saveConfig,
+      paths: [{ value: "/foo.values", enabled: true, dynamicLabelField: "label" }],
+    });
+
+    coordinator.emit("dynamicSeriesChanged", [
+      { identity: "parent:string:a", configIndex: 0, label: "a", color: "red", enabled: true },
+    ]);
+    expect(screen.getByText("/foo.values")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Delete series" })).toBeInTheDocument();
+    await screen.findByText("a");
+    await userEvent.setup().click(screen.getAllByRole("checkbox")[1]!);
+
+    expect(setDynamicSeriesEnabled).toHaveBeenCalledWith("parent:string:a", {
+      enabled: false,
+    });
+    expect(saveConfig).not.toHaveBeenCalled();
   });
 });

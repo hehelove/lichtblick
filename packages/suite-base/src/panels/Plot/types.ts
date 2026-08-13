@@ -15,7 +15,7 @@ import { CustomDatasetsBuilder } from "@lichtblick/suite-base/panels/Plot/builde
 import { IndexDatasetsBuilder } from "@lichtblick/suite-base/panels/Plot/builders/IndexDatasetsBuilder";
 import { TimestampDatasetsBuilder } from "@lichtblick/suite-base/panels/Plot/builders/TimestampDatasetsBuilder";
 import { PlotConfig, PlotPath } from "@lichtblick/suite-base/panels/Plot/utils/config";
-import { Bounds1D } from "@lichtblick/suite-base/types/Bounds";
+import { Bounds, Bounds1D } from "@lichtblick/suite-base/types/Bounds";
 import { SaveConfig } from "@lichtblick/suite-base/types/panels";
 
 import { OriginalValue } from "./utils/datum";
@@ -57,7 +57,10 @@ export type InteractionEvent =
 
 export type Datum = ScatterDataPoint & { value?: OriginalValue };
 
-export type Dataset = ChartDataset<"scatter", Datum[]>;
+export type Dataset = ChartDataset<"scatter", Datum[]> & {
+  seriesIdentity?: string;
+  configIndex?: number;
+};
 
 export type ChartType = Chart<"scatter", Datum[]>;
 
@@ -75,10 +78,14 @@ export type UpdateAction = {
   size?: { width: number; height: number };
   showXAxisLabels?: boolean;
   showYAxisLabels?: boolean;
+  showYAxisRight?: boolean;
+  showYAxisLabelsRight?: boolean;
   xAxisLabel?: string;
   yAxisLabel?: string;
+  yAxisLabelRight?: string;
   xBounds?: Partial<Bounds1D>;
   yBounds?: Partial<Bounds1D>;
+  yBoundsRight?: Partial<Bounds1D>;
   zoomMode?: "x" | "y" | "xy";
   referenceLines?: ReferenceLine[];
   interactionEvents?: InteractionEvent[];
@@ -189,6 +196,8 @@ export type PlotCoordinatorEventTypes = {
   /** Current values changed (for displaying in the legend) */
   currentValuesChanged(values: readonly unknown[]): void;
 
+  dynamicSeriesChanged(series: readonly DynamicSeriesLegendItem[]): void;
+
   /** Paths with mismatched data lengths were detected */
   pathsWithMismatchedDataLengthsChanged(pathsWithMismatchedDataLengths: string[]): void;
 
@@ -196,7 +205,17 @@ export type PlotCoordinatorEventTypes = {
   viewportChange(canReset: boolean): void;
 };
 
-export type ConfigBounds = { x: Partial<Bounds1D>; y: Partial<Bounds1D> };
+export type DynamicSeriesLegendItem = {
+  identity: string;
+  configIndex: number;
+  label: string;
+  color: string;
+  enabled: boolean;
+};
+
+export type ConfigBounds = { x: Partial<Bounds1D>; y: Partial<Bounds1D>; y1: Partial<Bounds1D> };
+
+export type PlotBounds = Bounds & { y1?: Bounds1D };
 
 export type HandleAction = {
   draft: PlotConfig;

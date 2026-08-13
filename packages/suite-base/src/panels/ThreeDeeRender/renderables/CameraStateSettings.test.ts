@@ -239,18 +239,21 @@ describe("CameraStateSettings", () => {
       cameraStateSettings.setCameraState(DEFAULT_CAMERA_STATE);
 
       mockOrbitControls.target.set(5, 2, 1);
-      mockOrbitControls.getAzimuthalAngle.mockReturnValue(
-        THREE.MathUtils.degToRad(-(DEFAULT_CAMERA_STATE.thetaOffset + 10)),
-      );
+      const modifiedAzimuth = THREE.MathUtils.degToRad(-(DEFAULT_CAMERA_STATE.thetaOffset + 10));
+      const baselineAzimuth = THREE.MathUtils.degToRad(-DEFAULT_CAMERA_STATE.thetaOffset);
+      mockOrbitControls.getAzimuthalAngle
+        .mockReturnValueOnce(modifiedAzimuth)
+        .mockReturnValueOnce(modifiedAzimuth)
+        .mockReturnValue(baselineAzimuth);
       expect(cameraStateSettings.hasModifiedCenter()).toBe(true);
 
       cameraStateSettings.resetCameraCenter();
 
       expect(cameraStateSettings.hasModifiedCenter()).toBe(false);
-      expect(cameraStateSettings.getCameraState()?.targetOffset).toEqual([
+      expect(cameraStateSettings.getCameraState().targetOffset).toEqual([
         ...DEFAULT_CAMERA_STATE.targetOffset,
       ]);
-      expect(cameraStateSettings.getCameraState()?.thetaOffset).toBeCloseTo(
+      expect(cameraStateSettings.getCameraState().thetaOffset).toBeCloseTo(
         DEFAULT_CAMERA_STATE.thetaOffset,
       );
     });

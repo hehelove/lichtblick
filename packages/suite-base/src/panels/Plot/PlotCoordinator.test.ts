@@ -471,11 +471,36 @@ describe("PlotCoordinator", () => {
         datasetsByConfigIndex: [],
         pathsWithMismatchedDataLengths: [],
       });
-
       await plotCoordinator["dispatchDownsample"]();
 
       const getViewportDatasetsSpyOn = jest.spyOn(datasetsBuilder, "getViewportDatasets");
       expect(getViewportDatasetsSpyOn).toHaveBeenCalled();
+    });
+
+    it("passes separate left and right y-axis bounds to the builder", async () => {
+      datasetsBuilder.getViewportDatasets = jest.fn().mockResolvedValue({
+        datasetsByConfigIndex: [],
+        pathsWithMismatchedDataLengths: [],
+      });
+      const getViewportDatasets = jest.spyOn(datasetsBuilder, "getViewportDatasets");
+      (renderer.update as jest.Mock).mockResolvedValue({
+        x: { min: 0, max: 1 },
+        y: { min: 0, max: 10 },
+        y1: { min: 100, max: 200 },
+      });
+      plotCoordinator.addInteractionEvent({ type: "zoom" } as unknown as InteractionEvent);
+
+      await plotCoordinator["dispatchRender"]();
+      await plotCoordinator["dispatchDownsample"]();
+
+      expect(getViewportDatasets).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          bounds: expect.objectContaining({
+            y: { min: 0, max: 10 },
+            y1: { min: 100, max: 200 },
+          }),
+        }),
+      );
     });
   });
 
@@ -537,6 +562,7 @@ describe("PlotCoordinator", () => {
       expect(plotCoordinator["configBounds"]).toEqual({
         x: { min: config.minXValue, max: config.maxXValue },
         y: { min: config.minYValue, max: config.maxYValue },
+        y1: { min: config.minYValueRight, max: config.maxYValueRight },
       });
     });
 
@@ -588,6 +614,31 @@ describe("PlotCoordinator", () => {
       expect(plotCoordinator["updateAction"].yAxisLabel).toBeUndefined();
     });
 
+    it("should display the right axis only when an enabled series uses it", () => {
+      jest.spyOn(plotCoordinator as any, "queueDispatchRender").mockImplementation(() => {});
+      (parseMessagePath as jest.Mock).mockImplementation((value) => ({ topicName: value }));
+      (fillInGlobalVariablesInPath as jest.Mock).mockImplementation((parsed) => parsed);
+      (stringifyMessagePath as jest.Mock).mockImplementation((parsed) => parsed.topicName ?? "");
+
+      plotCoordinator.handleConfig(
+        PlotBuilder.config({
+          paths: [PlotBuilder.path({ value: "/right", yAxisID: "y1", enabled: true })],
+        }),
+        "light",
+        {},
+      );
+      expect(plotCoordinator["updateAction"].showYAxisRight).toBe(true);
+
+      plotCoordinator.handleConfig(
+        PlotBuilder.config({
+          paths: [PlotBuilder.path({ value: "/right", yAxisID: "y1", enabled: false })],
+        }),
+        "light",
+        {},
+      );
+      expect(plotCoordinator["updateAction"].showYAxisRight).toBe(false);
+    });
+
     it("should correctly process paths and generate series", () => {
       const config = PlotBuilder.config();
       (parseMessagePath as jest.Mock).mockReturnValue(BasicBuilder.string());
@@ -624,9 +675,35 @@ describe("PlotCoordinator", () => {
       expect(series).toHaveLength(2);
       expect(series[0].configIndex).toBe(0);
       expect(series[1].configIndex).toBe(1);
-      expect(series[0].key).toBe(`0:receiveTime:${messagePath.value}`);
-      expect(series[1].key).toBe(`1:receiveTime:${messagePath.value}`);
+      expect(series[0].key).toBe(JSON.stringify([0, "receiveTime", messagePath.value, "", ""]));
+      expect(series[1].key).toBe(JSON.stringify([1, "receiveTime", messagePath.value, "", ""]));
       expect(series[0].key).not.toEqual(series[1].key);
+    });
+
+    it("uses dynamic fields in the series config key", () => {
+      const path = PlotBuilder.path({
+        value: "/foo.values",
+        dynamicLabelField: "label",
+        dynamicValueField: "value",
+      });
+      (parseMessagePath as jest.Mock).mockReturnValue({ topicName: "/foo" });
+      (fillInGlobalVariablesInPath as jest.Mock).mockImplementation((parsed) => parsed);
+      (stringifyMessagePath as jest.Mock).mockReturnValue(path.value);
+
+      plotCoordinator.handleConfig(PlotBuilder.config({ paths: [path] }), "light", {});
+      const firstKey = plotCoordinator["series"][0]!.key;
+      plotCoordinator.handleConfig(
+        PlotBuilder.config({
+          paths: [{ ...path, dynamicLabelField: "name", dynamicValueField: "reading" }],
+        }),
+        "light",
+        {},
+      );
+
+      expect(plotCoordinator["series"][0]!.key).not.toBe(firstKey);
+      expect(plotCoordinator["series"][0]!.key).toBe(
+        JSON.stringify([0, path.timestampMethod, path.value, "name", "reading"]),
+      );
     });
 
     it("should dispatch render and queue downsample", async () => {

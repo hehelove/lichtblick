@@ -24,10 +24,7 @@ import {
   useTimelineInteractionState,
 } from "@lichtblick/suite-base/context/TimelineInteractionStateContext";
 
-import {
-  XsEvalEventTooltip,
-  type XsEvalTooltipState,
-} from "./XsEvalEventTooltip";
+import { XsEvalEventTooltip, type XsEvalTooltipState } from "./XsEvalEventTooltip";
 
 /** 时间轴上相邻事件合并为簇的 frac 阈值（约 0.25% 时长）。 */
 const CLUSTER_FRAC_EPS = 0.0025;
@@ -39,6 +36,10 @@ type EventCluster = {
   minPosition: number;
   maxPosition: number;
 };
+
+function normalizeSeverity(severity: string | undefined): string {
+  return (severity ?? "info").toLowerCase();
+}
 
 function clusterEvents(events: readonly TimelinePositionedEvent[]): EventCluster[] {
   const sorted = [...events].sort((a, b) => a.startPosition - b.startPosition);
@@ -61,12 +62,12 @@ function clusterEvents(events: readonly TimelinePositionedEvent[]): EventCluster
 }
 
 function clusterSeverity(events: TimelinePositionedEvent[]): string {
-  const order = { error: 3, warning: 2, info: 1 };
+  const order: Record<string, number> = { error: 3, warning: 2, info: 1 };
   let best = "info";
   let bestRank = 0;
   for (const ev of events) {
-    const sev = (ev.event.metadata.severity ?? "info").toLowerCase();
-    const rank = order[sev as keyof typeof order] ?? 1;
+    const sev = normalizeSeverity(ev.event.metadata.severity);
+    const rank = order[sev] ?? 1;
     if (rank > bestRank) {
       bestRank = rank;
       best = sev;
@@ -205,15 +206,10 @@ function EventClusterTick({
 
   return (
     <div
-      className={cx(
-        classes.tick,
-        severityClass,
-        cluster.events.length > 1 && classes.tickCluster,
-        {
-          [classes.tickHovered]: isHovered,
-          [classes.tickSelected]: isSelected,
-        },
-      )}
+      className={cx(classes.tick, severityClass, cluster.events.length > 1 && classes.tickCluster, {
+        [classes.tickHovered]: isHovered,
+        [classes.tickSelected]: isSelected,
+      })}
       style={{
         left: `calc(${leftPct}% - ${theme.spacing(0.25)})`,
         width: `max(${theme.spacing(0.5)}, ${widthPct}%)`,
@@ -241,10 +237,7 @@ export function EventsOverlay(): React.JSX.Element | null {
   const pinnedTipRef = useRef<XsEvalTooltipState | undefined>(undefined);
   const [, forcePinRender] = useState(0);
 
-  const clusters = useMemo(
-    () => clusterEvents(events.value ?? []),
-    [events.value],
-  );
+  const clusters = useMemo(() => clusterEvents(events.value ?? []), [events.value]);
 
   const setPinnedTip = useCallback((state: XsEvalTooltipState | undefined) => {
     pinnedTipRef.current = state;
@@ -280,7 +273,10 @@ export function EventsOverlay(): React.JSX.Element | null {
   useEffect(() => {
     const onDocDown = (e: MouseEvent) => {
       const t = e.target;
-      if (!(t instanceof HTMLElement) || t.closest('[data-testid="xs-eval-event-tick"]') == undefined) {
+      if (
+        !(t instanceof HTMLElement) ||
+        t.closest('[data-testid="xs-eval-event-tick"]') == undefined
+      ) {
         if (pinnedTipRef.current) {
           pinnedTipRef.current = undefined;
           forcePinRender((n) => n + 1);

@@ -39,15 +39,21 @@ describe("PathLegend Component", () => {
 
   const renderComponent = (propsOverride: Partial<PathLegendProps & { panelId: string }> = {}) => {
     const props: PathLegendProps = {
-      heightPerTopic: BasicBuilder.number({ min: 0, max: 5000 }),
-      paths: [
+      heightPerRow: BasicBuilder.number({ min: 0, max: 5000 }),
+      pathState: [
         {
-          value: BasicBuilder.string(),
-          timestampMethod: BasicBuilder.sample(["receiveTime", "headerStamp"]),
+          path: {
+            value: BasicBuilder.string(),
+            timestampMethod: BasicBuilder.sample(["receiveTime", "headerStamp"]),
+          },
+          isArray: false,
         },
         {
-          value: BasicBuilder.string(),
-          timestampMethod: BasicBuilder.sample(["receiveTime", "headerStamp"]),
+          path: {
+            value: BasicBuilder.string(),
+            timestampMethod: BasicBuilder.sample(["receiveTime", "headerStamp"]),
+          },
+          isArray: false,
         },
       ],
       saveConfig: mockSaveConfig,
@@ -71,12 +77,12 @@ describe("PathLegend Component", () => {
   it("should render correctly with provided paths", () => {
     const { props } = renderComponent();
 
-    expect(screen.getByText(props.paths[0]!.value)).toBeTruthy();
-    expect(screen.getByText(props.paths[1]!.value)).toBeTruthy();
+    expect(screen.getByText(props.pathState[0]!.path.value)).toBeTruthy();
+    expect(screen.getByText(props.pathState[1]!.path.value)).toBeTruthy();
   });
 
   it("should render default text when paths array is empty", () => {
-    renderComponent({ paths: [] });
+    renderComponent({ pathState: [] });
 
     expect(screen.getByText("Click to add a series")).toBeTruthy();
   });
@@ -84,7 +90,7 @@ describe("PathLegend Component", () => {
   it("should call setFocusedPath and openPanelSettings when edit button is clicked", async () => {
     const row = 0;
     const panelId = BasicBuilder.string();
-    const { user } = renderComponent({ paths: [], panelId });
+    const { user } = renderComponent({ pathState: [], panelId });
     const editButton = screen.getByTestId(`edit-topic-button-${row}`);
 
     await user.click(editButton);
@@ -102,16 +108,40 @@ describe("PathLegend Component", () => {
 
     await user.click(deleteButton);
 
-    expect(mockSaveConfig).toHaveBeenCalledWith({ paths: [props.paths[1]] });
+    expect(mockSaveConfig).toHaveBeenCalledWith({ paths: [props.pathState[1]!.path] });
   });
 
   it("should apply the correct height for each topic", () => {
     const { props } = renderComponent();
-    const { style: firstRowStyle } = screen.getByTestId(`row-0`);
-    const { style: secondRowStyle } = screen.getByTestId(`row-1`);
-    const heightStyle = `height: ${props.heightPerTopic}px;`;
+    const { style: firstRowStyle } = screen.getByTestId(`row-0-0`);
+    const { style: secondRowStyle } = screen.getByTestId(`row-1-0`);
+    const heightStyle = `height: ${props.heightPerRow}px;`;
 
     expect(firstRowStyle.cssText).toContain(heightStyle);
     expect(secondRowStyle.cssText).toContain(heightStyle);
+  });
+
+  it("renders one legend row per dynamic series", () => {
+    const path = {
+      value: "/states",
+      label: "States",
+      timestampMethod: "receiveTime" as const,
+    };
+    renderComponent({
+      pathState: [
+        {
+          path,
+          isArray: false,
+          dynamicSeries: [
+            { identity: "string:left", label: "left" },
+            { identity: "string:right", label: "right" },
+          ],
+        },
+      ],
+    });
+
+    expect(screen.getByText("States · left")).toBeTruthy();
+    expect(screen.getByText("States · right")).toBeTruthy();
+    expect(screen.getAllByTestId(/^row-0-/)).toHaveLength(2);
   });
 });

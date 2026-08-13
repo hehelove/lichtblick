@@ -51,6 +51,7 @@ const createMockRenderer = (overrides?: Record<string, any>) => {
     setColorScheme: jest.fn(),
     handleAllFramesMessages: jest.fn(),
     addMessageEvent: jest.fn(),
+    setSynchronizedTopics: jest.fn(),
     setCameraState: jest.fn(),
     getCameraState: jest.fn().mockReturnValue(undefined),
     animationFrame: jest.fn(),
@@ -1368,6 +1369,90 @@ describe("ThreeDeeRender", () => {
           mockContext.onRender!({ topics }, jest.fn());
         });
       }).not.toThrow();
+    });
+  });
+
+  describe("topic timestamp synchronization", () => {
+    it("disables latest-per-render-tick only for topics actually participating in sync", async () => {
+      const subscription = { handler: jest.fn() };
+      const customRendererInstance = createMockRenderer({
+        schemaSubscriptions: new Map([["test.Message", [subscription]]]),
+      });
+      jest.mocked(Renderer).mockImplementationOnce(() => customRendererInstance as any);
+      const subscribe = jest.fn();
+      const mockContext = createMockContext({
+        subscribe,
+        initialState: {
+          topicsSynchronize: true,
+          topics: {
+            "/a": { visible: true, synchronize: true },
+            "/b": { visible: true, synchronize: true },
+            "/other": { visible: true },
+          },
+        },
+      });
+      render(<ThreeDeeRender {...setup({}, mockContext)} />);
+      await waitFor(() => {
+        expect(mockContext.onRender).toBeDefined();
+      });
+
+      act(() => {
+        mockContext.onRender!(
+          {
+            topics: [
+              { name: "/a", schemaName: "test.Message" },
+              { name: "/b", schemaName: "test.Message" },
+              { name: "/other", schemaName: "test.Message" },
+            ],
+          },
+          jest.fn(),
+        );
+      });
+
+      await waitFor(() => {
+        expect(subscribe).toHaveBeenLastCalledWith(
+          expect.arrayContaining([
+            expect.objectContaining({ topic: "/a", sampling: undefined }),
+            expect.objectContaining({ topic: "/b", sampling: undefined }),
+            expect.objectContaining({
+              topic: "/other",
+              sampling: { mode: "latest-per-render-tick" },
+            }),
+          ]),
+        );
+      });
+    });
+
+    it("keeps latest-per-render-tick when fewer than two topics request sync", async () => {
+      const customRendererInstance = createMockRenderer({
+        schemaSubscriptions: new Map([["test.Message", [{ handler: jest.fn() }]]]),
+      });
+      jest.mocked(Renderer).mockImplementationOnce(() => customRendererInstance as any);
+      const subscribe = jest.fn();
+      const mockContext = createMockContext({
+        subscribe,
+        initialState: {
+          topicsSynchronize: true,
+          topics: { "/a": { visible: true, synchronize: true } },
+        },
+      });
+      render(<ThreeDeeRender {...setup({}, mockContext)} />);
+      await waitFor(() => {
+        expect(mockContext.onRender).toBeDefined();
+      });
+
+      act(() => {
+        mockContext.onRender!({ topics: [{ name: "/a", schemaName: "test.Message" }] }, jest.fn());
+      });
+
+      await waitFor(() => {
+        expect(subscribe).toHaveBeenLastCalledWith([
+          expect.objectContaining({
+            topic: "/a",
+            sampling: { mode: "latest-per-render-tick" },
+          }),
+        ]);
+      });
     });
   });
 });

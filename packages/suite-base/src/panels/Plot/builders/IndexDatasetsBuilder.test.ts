@@ -35,6 +35,8 @@ function buildSeriesItems(
       lineSize: 1,
       messagePath: item.value,
       showLine: true,
+      dynamicLabelField: item.dynamicLabelField,
+      dynamicValueField: item.dynamicValueField,
     } satisfies SeriesItem;
   });
 }
@@ -66,6 +68,68 @@ function buildPlayerState(activeDataOverride?: Partial<PlayerStateActiveData>): 
 }
 
 describe("IndexDatasetsBuilder", () => {
+  it("expands an object array into dynamic datasets", async () => {
+    const builder = new IndexDatasetsBuilder();
+    builder.setSeries(buildSeriesItems([{ value: "/bar.values" }]));
+    builder.handlePlayerState(
+      buildPlayerState({
+        messages: [
+          {
+            topic: "/bar",
+            schemaName: "foo",
+            receiveTime: { sec: 0, nsec: 0 },
+            sizeInBytes: 0,
+            message: {
+              values: [
+                { label: "a", value: 4 },
+                { label: "b", value: 5 },
+              ],
+            },
+          },
+        ],
+      }),
+    );
+
+    const result = await builder.getViewportDatasets();
+    expect(result.datasetsByConfigIndex).toEqual([
+      expect.objectContaining({ label: "a", data: [expect.objectContaining({ x: 0, y: 4 })] }),
+      expect.objectContaining({ label: "b", data: [expect.objectContaining({ x: 1, y: 5 })] }),
+    ]);
+  });
+
+  it("keeps dynamic children separate when a regular series is added later", async () => {
+    const builder = new IndexDatasetsBuilder();
+    builder.setSeries(buildSeriesItems([{ value: "/bar.values" }]));
+    builder.handlePlayerState(
+      buildPlayerState({
+        messages: [
+          {
+            topic: "/bar",
+            schemaName: "foo",
+            receiveTime: { sec: 0, nsec: 0 },
+            sizeInBytes: 0,
+            message: {
+              values: [
+                { label: "a", value: 4 },
+                { label: "b", value: 5 },
+              ],
+            },
+          },
+        ],
+      }),
+    );
+
+    builder.setSeries(
+      buildSeriesItems([{ value: "/bar.values" }, { value: "/bar.regular", key: "regular" }]),
+    );
+
+    const result = await builder.getViewportDatasets();
+    expect(result.datasetsByConfigIndex).toEqual([
+      expect.objectContaining({ label: "a" }),
+      expect.objectContaining({ label: undefined }),
+      expect.objectContaining({ label: "b" }),
+    ]);
+  });
   it("should produce a dataset", async () => {
     const builder = new IndexDatasetsBuilder();
 
@@ -192,6 +256,86 @@ describe("IndexDatasetsBuilder", () => {
           fill: false,
         }),
       ],
+    });
+  });
+
+  it("preserves scalar conversions when applying math modifiers", async () => {
+    const builder = new IndexDatasetsBuilder();
+    builder.setSeries(buildSeriesItems([{ value: "/bar.values[:].@abs" }]));
+    builder.handlePlayerState(
+      buildPlayerState({
+        messages: [
+          {
+            topic: "/bar",
+            schemaName: "foo",
+            receiveTime: { sec: 0, nsec: 0 },
+            sizeInBytes: 0,
+            message: { values: [-2n, true, "3"] },
+          },
+        ],
+      }),
+    );
+
+    const result = await builder.getViewportDatasets();
+    expect(result.datasetsByConfigIndex[0]?.data.map(({ y }) => y)).toEqual([2, 1, 3]);
+  });
+
+  it("should apply an object math function", async () => {
+    const builder = new IndexDatasetsBuilder();
+    builder.setSeries(buildSeriesItems([{ value: "/bar.vector.@norm" }]));
+
+    builder.handlePlayerState(
+      buildPlayerState({
+        messages: [
+          {
+            topic: "/bar",
+            schemaName: "foo",
+            receiveTime: { sec: 0, nsec: 0 },
+            sizeInBytes: 0,
+            message: { vector: { x: 3, y: 4 } },
+          },
+        ],
+      }),
+    );
+
+    await expect(builder.getViewportDatasets()).resolves.toEqual({
+      pathsWithMismatchedDataLengths: new Set(),
+      datasetsByConfigIndex: [
+        expect.objectContaining({
+          data: [{ x: 0, y: 5, value: 5, receiveTime: { sec: 0, nsec: 0 } }],
+        }),
+      ],
+    });
+  });
+
+  it("drops dynamic children and their data when the field config changes", async () => {
+    const builder = new IndexDatasetsBuilder();
+    builder.setSeries(
+      buildSeriesItems([{ key: "label-key", value: "/bar.values", dynamicLabelField: "label" }]),
+    );
+    builder.handlePlayerState(
+      buildPlayerState({
+        messages: [
+          {
+            topic: "/bar",
+            schemaName: "foo",
+            receiveTime: { sec: 0, nsec: 0 },
+            sizeInBytes: 0,
+            message: { values: [{ label: "old", value: 4 }] },
+          },
+        ],
+      }),
+    );
+    expect(builder.getDynamicSeries()).toHaveLength(1);
+
+    builder.setSeries(
+      buildSeriesItems([{ key: "name-key", value: "/bar.values", dynamicLabelField: "name" }]),
+    );
+
+    expect(builder.getDynamicSeries()).toEqual([]);
+    await expect(builder.getViewportDatasets()).resolves.toEqual({
+      datasetsByConfigIndex: [],
+      pathsWithMismatchedDataLengths: new Set(),
     });
   });
 
