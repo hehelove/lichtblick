@@ -17,6 +17,7 @@ import { fromSec, toSec } from "@lichtblick/rostime";
 import {
   AppSettingValue,
   ExtensionPanelRegistration,
+  Immutable,
   PanelExtensionContext,
   ParameterValue,
   RenderState,
@@ -56,6 +57,7 @@ import { PLAYER_CAPABILITIES } from "@lichtblick/suite-base/players/constants";
 import {
   AdvertiseOptions,
   InternalSubscribePayload,
+  PlayerAlert,
   PlayerPresence,
 } from "@lichtblick/suite-base/players/types";
 import {
@@ -185,7 +187,7 @@ function PanelExtensionAdapter(
 
   const [slowRender, setSlowRender] = useState(false);
   const [, setDefaultPanelTitle] = useDefaultPanelTitle();
-  const { setAlert, clearAlert } = useAlertsActions();
+  const { setAlert, clearSessionAlert: clearAlert } = useAlertsActions();
 
   // Tracks the ids of alerts this panel has set (via unstable_setAlert) so they can be cleared
   // when the panel unmounts. Alerts are namespaced by panelId to avoid collisions across panels.
@@ -676,7 +678,7 @@ function PanelExtensionAdapter(
         setDefaultPanelTitle(title);
       },
 
-      unstable_setAlert: (alertId: string, alert) => {
+      unstable_setAlert: (alertId: string, alert: Immutable<PlayerAlert> | undefined) => {
         if (!isMounted()) {
           return;
         }

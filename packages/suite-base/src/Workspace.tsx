@@ -22,9 +22,9 @@ import { Trans, useTranslation } from "react-i18next";
 import Logger from "@lichtblick/log";
 import { AppSetting } from "@lichtblick/suite-base/AppSetting";
 import { useStyles } from "@lichtblick/suite-base/Workspace.style";
-import SessionAPI from "@lichtblick/suite-base/api/session/SessionAPI";
+import McapBundleAPI from "@lichtblick/suite-base/api/mcapBundle/McapBundleAPI";
 import AccountSettings from "@lichtblick/suite-base/components/AccountSettingsSidebar/AccountSettings";
-import { AlertsList } from "@lichtblick/suite-base/components/AlertsList";
+import { AlertsList } from "@lichtblick/suite-base/components/AlertList/AlertsList";
 import { AppBar } from "@lichtblick/suite-base/components/AppBar";
 import {
   DataSourceDialog,
@@ -96,6 +96,7 @@ import useBroadcast from "@lichtblick/suite-base/util/broadcast/useBroadcast";
 import isDesktopApp from "@lichtblick/suite-base/util/isDesktopApp";
 
 import { useWorkspaceActions } from "./context/Workspace/useWorkspaceActions";
+import { severityToBadgeColor } from "./utils";
 
 const log = Logger.getLogger(__filename);
 
@@ -138,7 +139,7 @@ function WorkspaceContent(props: WorkspaceProps): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement>(ReactNull);
   const { availableSources, selectSource } = usePlayerSelection();
   const playerPresence = useMessagePipeline(selectPlayerPresence);
-  const { alertCount } = useAlertCount();
+  const { alertCount, highestSeverity } = useAlertCount();
 
   const dataSourceDialog = useWorkspaceStore(selectWorkspaceDataSourceDialog);
   const leftSidebarItem = useWorkspaceStore(selectWorkspaceLeftSidebarItem);
@@ -299,7 +300,10 @@ function WorkspaceContent(props: WorkspaceProps): React.JSX.Element {
           iconName: "DatabaseSettings",
           title: "Data source",
           component: DataSourceSidebarItem,
-          badge: alertCount > 0 ? { count: alertCount } : undefined,
+          badge:
+            alertCount > 0
+              ? { count: alertCount, color: severityToBadgeColor(highestSeverity) }
+              : undefined,
         },
       ],
     ]);
@@ -368,6 +372,7 @@ function WorkspaceContent(props: WorkspaceProps): React.JSX.Element {
   }, [
     DataSourceSidebarItem,
     alertCount,
+    highestSeverity,
     enableNewTopNav,
     enableStudioLogsSidebar,
     AppContextLayoutBrowser,
@@ -389,13 +394,16 @@ function WorkspaceContent(props: WorkspaceProps): React.JSX.Element {
         {
           title: "Alerts",
           component: AlertsList,
-          badge: alertCount > 0 ? { count: alertCount, color: "error" } : undefined,
+          badge:
+            alertCount > 0
+              ? { count: alertCount, color: severityToBadgeColor(highestSeverity) }
+              : undefined,
         },
       ],
       ["layouts", { title: "Layouts", component: LayoutBrowser }],
     ]);
     return items;
-  }, [PanelSettingsSidebar, alertCount]);
+  }, [PanelSettingsSidebar, alertCount, highestSeverity]);
 
   const rightSidebarItems = useMemo(() => {
     const items = new Map<RightSidebarItemKey, SidebarItem>([
@@ -502,7 +510,7 @@ function WorkspaceContent(props: WorkspaceProps): React.JSX.Element {
       }
     | undefined
   >(
-    targetUrlState && !targetUrlState.sessionId
+    targetUrlState && !targetUrlState.mcapBundleId
       ? {
           ds: targetUrlState.ds,
           dsParams: targetUrlState.dsParams,
@@ -511,10 +519,10 @@ function WorkspaceContent(props: WorkspaceProps): React.JSX.Element {
       : undefined,
   );
 
-  // Resolve session-based MCAP URLs when sessionId is present.
+  // Resolve MCAP bundle URLs when mcapBundleId is present.
   useEffect(() => {
-    const sessionId = targetUrlState?.sessionId;
-    if (!sessionId) {
+    const mcapBundleId = targetUrlState?.mcapBundleId;
+    if (!mcapBundleId) {
       return;
     }
 
@@ -523,7 +531,7 @@ function WorkspaceContent(props: WorkspaceProps): React.JSX.Element {
 
     void (async () => {
       try {
-        const mcaps = await SessionAPI.getSession(sessionId, signal);
+        const mcaps = await McapBundleAPI.getMcapBundle(mcapBundleId, signal);
         if (mcaps.length === 0) {
           enqueueSnackbar("Session contains no data sources", { variant: "error" });
           return;
@@ -547,7 +555,7 @@ function WorkspaceContent(props: WorkspaceProps): React.JSX.Element {
     return () => {
       controller.abort();
     };
-  }, [targetUrlState?.sessionId, enqueueSnackbar]);
+  }, [targetUrlState?.mcapBundleId, enqueueSnackbar]);
 
   const selectEvent = useEvents(selectSelectEvent);
 
