@@ -129,6 +129,20 @@ describe("makeSeriesNode", () => {
       ],
       value: seriesNode.path.timestampMethod,
     });
+    expect(fields!.dynamicLabelField).toEqual({
+      help: "labels.dynamicFieldsHelp",
+      input: "string",
+      label: "labels.dynamicLabelField",
+      placeholder: "label",
+      value: seriesNode.path.dynamicLabelField,
+    });
+    expect(fields!.dynamicValueField).toEqual({
+      help: "labels.dynamicFieldsHelp",
+      input: "string",
+      label: "labels.dynamicValueField",
+      placeholder: "value",
+      value: seriesNode.path.dynamicValueField,
+    });
   });
 
   it("should return the node structure with actions when canDelete is false", () => {

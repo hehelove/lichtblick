@@ -72,6 +72,27 @@ const makeSeriesNode = memoizeWeak(
           ],
           value: path.timestampMethod,
         },
+        yAxisID: {
+          input: "select",
+          label: t("yAxis"),
+          options: [
+            { label: t("yAxisLeft"), value: "y" },
+            { label: t("yAxisRight"), value: "y1" },
+          ],
+          value: path.yAxisID ?? "y",
+        },
+        dynamicLabelField: {
+          input: "string",
+          label: t("dynamicLabelField"),
+          value: path.dynamicLabelField,
+          placeholder: "label",
+        },
+        dynamicValueField: {
+          input: "string",
+          label: t("dynamicValueField"),
+          value: path.dynamicValueField,
+          placeholder: "value",
+        },
       },
     };
   },
@@ -127,6 +148,13 @@ export function buildSettingsTree(config: PlotConfig, t: TFunction<"plot">): Set
       ? t("maxXError")
       : undefined;
 
+  const maxYRightError =
+    _.isNumber(config.minYValueRight) &&
+    _.isNumber(config.maxYValueRight) &&
+    config.minYValueRight >= config.maxYValueRight
+      ? t("maxYRightError")
+      : undefined;
+
   return {
     general: {
       label: t("general"),
@@ -145,6 +173,10 @@ export function buildSettingsTree(config: PlotConfig, t: TFunction<"plot">): Set
             { value: "floating", label: t("floating") },
             { value: "left", label: t("left") },
             { value: "top", label: t("top") },
+            { value: "topLeft", label: t("topLeft") },
+            { value: "topRight", label: t("topRight") },
+            { value: "bottomLeft", label: t("bottomLeft") },
+            { value: "bottomRight", label: t("bottomRight") },
             { value: "none", label: t("hidden") },
           ],
         },
@@ -180,6 +212,35 @@ export function buildSettingsTree(config: PlotConfig, t: TFunction<"plot">): Set
           input: "number",
           error: maxYError,
           value: config.maxYValue != undefined ? Number(config.maxYValue) : undefined,
+          placeholder: "auto",
+        },
+      },
+    },
+    yAxisRight: {
+      label: t("yAxisRight"),
+      defaultExpansionState: "collapsed",
+      fields: {
+        yAxisLabelRight: {
+          label: t("axisLabel"),
+          input: "string",
+          value: config.yAxisLabelRight,
+        },
+        showYAxisLabelsRight: {
+          label: t("showLabels"),
+          input: "boolean",
+          value: config.showYAxisLabelsRight ?? true,
+        },
+        minYValueRight: {
+          label: t("min"),
+          input: "number",
+          value: config.minYValueRight != undefined ? Number(config.minYValueRight) : undefined,
+          placeholder: "auto",
+        },
+        maxYValueRight: {
+          label: t("max"),
+          input: "number",
+          error: maxYRightError,
+          value: config.maxYValueRight != undefined ? Number(config.maxYValueRight) : undefined,
           placeholder: "auto",
         },
       },

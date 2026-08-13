@@ -86,6 +86,20 @@ export const makeSeriesNode = memoizeWeak(
           label: t("labels.label"),
           value: path.label,
         },
+        dynamicLabelField: {
+          help: t("labels.dynamicFieldsHelp"),
+          input: "string",
+          label: t("labels.dynamicLabelField"),
+          placeholder: "label",
+          value: path.dynamicLabelField,
+        },
+        dynamicValueField: {
+          help: t("labels.dynamicFieldsHelp"),
+          input: "string",
+          label: t("labels.dynamicValueField"),
+          placeholder: "value",
+          value: path.dynamicValueField,
+        },
         timestampMethod: {
           input: "select",
           label: t("labels.timestamp"),
@@ -112,6 +126,7 @@ export const makeRootSeriesNode = memoizeWeak(
                 {
                   path: DEFAULT_STATE_TRANSITION_PATH,
                   isArray: false,
+                  dynamicSeries: [],
                   canDelete: false,
                   canReorder: false,
                 },
@@ -119,13 +134,14 @@ export const makeRootSeriesNode = memoizeWeak(
               ),
             ],
           ]
-        : paths.map(({ path, isArray }, index) => [
+        : paths.map(({ path, isArray, dynamicSeries }, index) => [
             `${index}`,
             makeSeriesNode(
               index,
               {
                 path,
                 isArray,
+                dynamicSeries,
                 canDelete: true,
                 canReorder: paths.length > 1,
               },

@@ -29,7 +29,8 @@ import {
 } from "./IDatasetsBuilder";
 import { buildCurrentSeriesActions, buildFullSeriesActions } from "./utils";
 import { getChartValue, isChartValue } from "../utils/datum";
-import { MathFunction, mathFunctions } from "../utils/mathFunctions";
+import { DynamicSeriesResolver, isDynamicSeries } from "../utils/dynamicSeries";
+import { getMathFunction, MathFunction } from "../utils/mathFunctions";
 
 type CustomDatasetsSeriesItem = {
   config: Immutable<SeriesItem>;
@@ -55,6 +56,9 @@ export class CustomDatasetsBuilder implements IDatasetsBuilder {
   #xFullBounds?: Bounds1D;
 
   #hasRangeSource: boolean = false;
+  readonly #dynamicResolver = new DynamicSeriesResolver();
+  readonly #dynamicCurrentCount = new Map<SeriesItem["key"], number>();
+  readonly #dynamicFullCount = new Map<SeriesItem["key"], number>();
 
   public getXTopic(): string | undefined {
     return this.#xParsedPath?.topicName;
@@ -102,16 +106,23 @@ export class CustomDatasetsBuilder implements IDatasetsBuilder {
         }
       }
 
+      const staticSeries = this.#series.filter(({ config }) => !isDynamicSeries(config));
       const { actions: seriesActions, datasetsChanged: seriesChanged } = buildCurrentSeriesActions(
-        this.#series,
+        staticSeries,
         { didSeek, hasRangeSource: this.#hasRangeSource },
         (config) => {
-          const mathFn = config.parsed.modifier ? mathFunctions[config.parsed.modifier] : undefined;
+          const mathFn = getMathFunction(config.parsed.modifier);
           return readMessagePathItems(msgEvents, config.parsed, mathFn);
         },
       );
       this.#pendingDispatch.push(...(seriesActions as UpdateDataAction[]));
       datasetsChanged ||= seriesChanged;
+      const dynamicChanged = this.#appendDynamicMessages(
+        msgEvents,
+        didSeek ? "reset-current" : undefined,
+        "append-current",
+      );
+      datasetsChanged ||= dynamicChanged;
     }
 
     if (!this.#xCurrentBounds) {
@@ -161,11 +172,17 @@ export class CustomDatasetsBuilder implements IDatasetsBuilder {
       return;
     }
 
-    const actions = buildFullSeriesActions(this.#series, topic, options, (config) => {
-      const mathFn = config.parsed.modifier ? mathFunctions[config.parsed.modifier] : undefined;
+    const staticSeries = this.#series.filter(({ config }) => !isDynamicSeries(config));
+    const actions = buildFullSeriesActions(staticSeries, topic, options, (config) => {
+      const mathFn = getMathFunction(config.parsed.modifier);
       return readMessagePathItems(messages, config.parsed, mathFn);
     });
     this.#pendingDispatch.push(...(actions as UpdateDataAction[]));
+    this.#appendDynamicMessages(
+      messages,
+      options.isReset ? "reset-full" : undefined,
+      "append-full",
+    );
   }
 
   public setXPath(path: Immutable<MessagePath> | undefined): void {
@@ -188,11 +205,90 @@ export class CustomDatasetsBuilder implements IDatasetsBuilder {
 
   public setSeries(series: Immutable<SeriesItem[]>): void {
     this.#series = series.map((item) => ({ config: item }));
+    this.#dynamicResolver.setSeries(series);
 
     this.#pendingDispatch.push({
       type: "update-series-config",
-      seriesItems: series,
+      seriesItems: this.#dynamicResolver.getSeries(),
     });
+  }
+
+  public setDynamicSeriesEnabled(identity: string, options: { enabled: boolean }): void {
+    this.#dynamicResolver.setEnabled(identity, options);
+    this.#pendingDispatch.push({
+      type: "update-series-config",
+      seriesItems: this.#dynamicResolver.getSeries(),
+    });
+  }
+
+  public getDynamicSeries(): Immutable<SeriesItem[]> {
+    return this.#dynamicResolver.getSeries().filter((item) => item.compositeKey != undefined);
+  }
+
+  #appendDynamicMessages(
+    events: Immutable<MessageEvent[]>,
+    resetType: "reset-current" | "reset-full" | undefined,
+    appendType: "append-current" | "append-full",
+  ): boolean {
+    const actions: UpdateDataAction[] = [];
+    let changed = false;
+    for (const { config } of this.#series) {
+      const itemsByKey = new Map<SeriesItem["key"], ValueItem[]>();
+      const countByParent =
+        appendType === "append-current" ? this.#dynamicCurrentCount : this.#dynamicFullCount;
+      if (resetType) {
+        countByParent.set(config.key, 0);
+      }
+      const previousCount = countByParent.get(config.key) ?? 0;
+      let appendedCount = 0;
+      for (const event of events) {
+        if (event.topic !== config.parsed.topicName) {
+          continue;
+        }
+        for (const item of simpleGetMessagePathDataItems(event, config.parsed)) {
+          const resolved = this.#dynamicResolver.resolve(config, item);
+          if (!isDynamicSeries(config) && resolved.length === 0) {
+            continue;
+          }
+          const slotCount = Array.isArray(item) ? item.length : 0;
+          const valuesByIdentity = new Map(resolved.map((value) => [value.identity, value]));
+          for (const child of this.#dynamicResolver.getChildren(config.key)) {
+            const items =
+              itemsByKey.get(child.key) ??
+              Array.from({ length: previousCount + appendedCount }, () => ({
+                value: NaN,
+                originalValue: NaN,
+                receiveTime: event.receiveTime,
+              }));
+            const childValue = valuesByIdentity.get(child.compositeKey!);
+            for (let sourceIndex = 0; sourceIndex < slotCount; sourceIndex++) {
+              const value = childValue?.sourceIndex === sourceIndex ? childValue.value : NaN;
+              items.push({ value, originalValue: value, receiveTime: event.receiveTime });
+            }
+            itemsByKey.set(child.key, items);
+          }
+          appendedCount += slotCount;
+        }
+      }
+      countByParent.set(config.key, previousCount + appendedCount);
+      for (const child of this.#dynamicResolver.getChildren(config.key)) {
+        if (resetType) {
+          actions.push({ type: resetType, series: child.key });
+        }
+        const items = itemsByKey.get(child.key) ?? [];
+        if (items.length > 0) {
+          actions.push({ type: appendType, series: child.key, items });
+          changed = true;
+        }
+      }
+    }
+    if (actions.length > 0) {
+      this.#pendingDispatch.push(
+        { type: "update-series-config", seriesItems: this.#dynamicResolver.getSeries() },
+        ...actions,
+      );
+    }
+    return changed;
   }
 
   public async getViewportDatasets(
@@ -216,7 +312,7 @@ function parseXPathItems(
   messages: Immutable<MessageEvent[]>,
   xParsedPath: Immutable<MessagePath>,
 ): ValueItem[] {
-  const mathFn = xParsedPath.modifier ? mathFunctions[xParsedPath.modifier] : undefined;
+  const mathFn = getMathFunction(xParsedPath.modifier);
   return readMessagePathItems(messages, xParsedPath, mathFn);
 }
 
@@ -233,6 +329,16 @@ function readMessagePathItems(
 
     const items = simpleGetMessagePathDataItems(event, path);
     for (const item of items) {
+      if (mathFunction) {
+        const mathModified = mathFunction(item);
+        out.push({
+          value: mathModified,
+          originalValue: mathModified,
+          receiveTime: event.receiveTime,
+        });
+        continue;
+      }
+
       if (!isChartValue(item)) {
         continue;
       }
@@ -241,10 +347,9 @@ function readMessagePathItems(
         continue;
       }
 
-      const mathModified = mathFunction ? mathFunction(chartValue) : chartValue;
       out.push({
-        value: mathModified,
-        originalValue: mathFunction ? mathModified : item,
+        value: chartValue,
+        originalValue: item,
         receiveTime: event.receiveTime,
       });
     }

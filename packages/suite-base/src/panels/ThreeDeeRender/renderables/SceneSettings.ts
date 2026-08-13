@@ -116,6 +116,14 @@ export class SceneSettings extends SceneExtension {
       },
     };
 
+    if (this.renderer.interfaceMode === "3d") {
+      fields.topicsSynchronize = {
+        label: t("threeDee:syncTimestamps"),
+        input: "boolean",
+        value: config.topicsSynchronize ?? false,
+      };
+    }
+
     if (process.env.NODE_ENV === "production") {
       delete fields.debugPicking;
     }
@@ -153,6 +161,13 @@ export class SceneSettings extends SceneExtension {
     const category = path[0]!;
     const value = action.payload.value;
     if (category === "scene") {
+      if (path[1] === "topicsSynchronize") {
+        this.renderer.updateConfig((draft) => {
+          draft.topicsSynchronize = value as boolean | undefined;
+        });
+        this.updateSettingsTree();
+        return;
+      }
       if (path[1] === "debugPicking") {
         this.renderer.debugPicking = (value as boolean | undefined) ?? false;
         this.updateSettingsTree();

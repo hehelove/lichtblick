@@ -67,6 +67,24 @@ describe("getChartOptions", () => {
             precision: 3,
           },
         },
+        y1: {
+          type: "linear",
+          display: false,
+          position: "right",
+          grid: {
+            drawOnChartArea: false,
+            color: mockGridColor,
+          },
+          ticks: {
+            font: {
+              family: fontMonospace,
+              size: 10,
+            },
+            color: mockTickColor,
+            padding: 0,
+            precision: 3,
+          },
+        },
       },
       plugins: {
         decimation: {
@@ -119,6 +137,7 @@ describe("getChartOptions", () => {
     expect(options.scales?.x?.ticks?.color).toBe(tickColor);
     expect(options.scales?.y?.grid?.color).toBe(gridColor);
     expect(options.scales?.y?.ticks?.color).toBe(tickColor);
+    expect(options.scales?.y1?.ticks?.color).toBe(tickColor);
   });
 
   it("should ensure plugins are configured correctly", () => {

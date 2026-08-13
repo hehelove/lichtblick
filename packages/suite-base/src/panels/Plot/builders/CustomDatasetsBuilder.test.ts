@@ -46,6 +46,9 @@ function buildSeriesItems(
       lineSize: item.lineSize ?? 1,
       messagePath: item.value,
       showLine: item.showLine ?? true,
+      yAxisID: item.yAxisID,
+      dynamicLabelField: item.dynamicLabelField,
+      dynamicValueField: item.dynamicValueField,
     } satisfies SeriesItem;
   });
 }
@@ -84,6 +87,111 @@ function buildPlayerState(
 }
 
 describe("CustomDatasetsBuilder", () => {
+  it("expands accumulated custom-axis dynamic datasets", async () => {
+    const builder = new CustomDatasetsBuilder();
+    builder.setXPath(parseMessagePath("/foo.x[:]"));
+    builder.setSeries(buildSeriesItems([{ value: "/bar.values" }]));
+    builder.handlePlayerState(
+      buildPlayerState({
+        messages: [
+          {
+            topic: "/foo",
+            schemaName: "foo",
+            receiveTime: { sec: 0, nsec: 0 },
+            sizeInBytes: 0,
+            message: { x: [10, 20] },
+          },
+          {
+            topic: "/bar",
+            schemaName: "foo",
+            receiveTime: { sec: 0, nsec: 0 },
+            sizeInBytes: 0,
+            message: {
+              values: [
+                { label: "a", value: 9 },
+                { label: "b", value: 8 },
+              ],
+            },
+          },
+        ],
+      }),
+    );
+
+    const result = await builder.getViewportDatasets({
+      size: { width: 1000, height: 1000 },
+      bounds: {},
+    });
+    expect(result.datasetsByConfigIndex).toEqual([
+      expect.objectContaining({
+        label: "a",
+        data: [
+          { x: 10, y: 9, value: 9 },
+          { x: 20, y: NaN, value: NaN },
+        ],
+      }),
+      expect.objectContaining({
+        label: "b",
+        data: [
+          { x: 10, y: NaN, value: NaN },
+          { x: 20, y: 8, value: 8 },
+        ],
+      }),
+    ]);
+  });
+
+  it("leaves a gap when an accumulated dynamic label appears after earlier x values", async () => {
+    const builder = new CustomDatasetsBuilder();
+    builder.setXPath(parseMessagePath("/foo.x[:]"));
+    builder.setSeries(buildSeriesItems([{ value: "/bar.values", dynamicLabelField: "label" }]));
+    builder.handlePlayerState(
+      buildPlayerState({
+        messages: [
+          {
+            topic: "/foo",
+            schemaName: "foo",
+            receiveTime: { sec: 0, nsec: 0 },
+            sizeInBytes: 0,
+            message: { x: [1, 2] },
+          },
+          {
+            topic: "/bar",
+            schemaName: "foo",
+            receiveTime: { sec: 0, nsec: 0 },
+            sizeInBytes: 0,
+            message: { values: [{ label: "a", value: 3 }] },
+          },
+          {
+            topic: "/bar",
+            schemaName: "foo",
+            receiveTime: { sec: 1, nsec: 0 },
+            sizeInBytes: 0,
+            message: { values: [{ label: "b", value: 4 }] },
+          },
+        ],
+      }),
+    );
+
+    const result = await builder.getViewportDatasets({
+      size: { width: 1000, height: 1000 },
+      bounds: {},
+    });
+    expect(result.datasetsByConfigIndex).toEqual([
+      expect.objectContaining({
+        label: "a",
+        data: [
+          { x: 1, y: 3, value: 3 },
+          { x: 2, y: NaN, value: NaN },
+        ],
+      }),
+      expect.objectContaining({
+        label: "b",
+        data: [
+          { x: 1, y: NaN, value: NaN },
+          { x: 2, y: 4, value: 4 },
+        ],
+      }),
+    ]);
+  });
   it("should dataset from current messages", async () => {
     const builder = new CustomDatasetsBuilder();
 
@@ -94,6 +202,7 @@ describe("CustomDatasetsBuilder", () => {
           enabled: true,
           timestampMethod: "receiveTime",
           value: "/bar.val",
+          yAxisID: "y1",
         },
         {
           enabled: true,
@@ -189,6 +298,7 @@ describe("CustomDatasetsBuilder", () => {
       pathsWithMismatchedDataLengths: new Set(["/baz.val.@negative"]),
       datasetsByConfigIndex: [
         expect.objectContaining({
+          yAxisID: "y1",
           data: [
             { x: 0, y: 0, value: 0 },
             { x: 1, y: 1, value: 1 },
@@ -203,6 +313,123 @@ describe("CustomDatasetsBuilder", () => {
         }),
       ],
     });
+  });
+
+  it("uses each series axis bounds when downsampling", async () => {
+    const builder = new CustomDatasetsBuilder();
+    builder.setXPath(parseMessagePath("/foo.x[:]"));
+    builder.setSeries(
+      buildSeriesItems([
+        { value: "/bar.left[:]", showLine: false },
+        { value: "/bar.right[:]", showLine: false, yAxisID: "y1" },
+      ]),
+    );
+    builder.handlePlayerState(
+      buildPlayerState({
+        messages: [
+          {
+            topic: "/foo",
+            schemaName: "foo",
+            receiveTime: { sec: 0, nsec: 0 },
+            sizeInBytes: 0,
+            message: { x: [0, 1] },
+          },
+          {
+            topic: "/bar",
+            schemaName: "bar",
+            receiveTime: { sec: 0, nsec: 0 },
+            sizeInBytes: 0,
+            message: { left: [1, 2], right: [101, 102] },
+          },
+        ],
+      }),
+    );
+
+    const result = await builder.getViewportDatasets({
+      size: { width: 100, height: 100 },
+      bounds: {
+        x: { min: 0, max: 1 },
+        y: { min: 0, max: 10 },
+        y1: { min: 100, max: 110 },
+      },
+    });
+
+    expect(result.datasetsByConfigIndex[0]?.data).toEqual([
+      { x: 0, y: 1, value: 1 },
+      { x: 1, y: 2, value: 2 },
+    ]);
+    expect(result.datasetsByConfigIndex[1]?.data).toEqual([
+      { x: 0, y: 101, value: 101 },
+      { x: 1, y: 102, value: 102 },
+    ]);
+  });
+
+  it("should apply an object math function", async () => {
+    const builder = new CustomDatasetsBuilder();
+    builder.setXPath(parseMessagePath("/foo.val"));
+    builder.setSeries(buildSeriesItems([{ value: "/bar.vector.@norm" }]));
+    builder.handlePlayerState(
+      buildPlayerState({
+        messages: [
+          {
+            topic: "/foo",
+            schemaName: "foo",
+            receiveTime: { sec: 0, nsec: 0 },
+            sizeInBytes: 0,
+            message: { val: 1 },
+          },
+          {
+            topic: "/bar",
+            schemaName: "bar",
+            receiveTime: { sec: 0, nsec: 0 },
+            sizeInBytes: 0,
+            message: { vector: { x: 3, y: 4 } },
+          },
+        ],
+      }),
+    );
+
+    const result = await builder.getViewportDatasets({
+      size: { width: 1_000, height: 1_000 },
+      bounds: {},
+    });
+    expect(result.datasetsByConfigIndex[0]?.data).toEqual([{ x: 1, y: 5, value: 5 }]);
+  });
+
+  it("preserves scalar conversions when applying math modifiers", async () => {
+    const builder = new CustomDatasetsBuilder();
+    builder.setXPath(parseMessagePath("/foo.values[:].@abs"));
+    builder.setSeries(buildSeriesItems([{ value: "/bar.values[:].@abs" }]));
+    builder.handlePlayerState(
+      buildPlayerState({
+        messages: [
+          {
+            topic: "/foo",
+            schemaName: "foo",
+            receiveTime: { sec: 0, nsec: 0 },
+            sizeInBytes: 0,
+            message: { values: [-4n, false, "6"] },
+          },
+          {
+            topic: "/bar",
+            schemaName: "bar",
+            receiveTime: { sec: 0, nsec: 0 },
+            sizeInBytes: 0,
+            message: { values: [-2n, true, "3"] },
+          },
+        ],
+      }),
+    );
+
+    const result = await builder.getViewportDatasets({
+      size: { width: 1_000, height: 1_000 },
+      bounds: {},
+    });
+    expect(result.datasetsByConfigIndex[0]?.data.map(({ x, y }) => ({ x, y }))).toEqual([
+      { x: 4, y: 2 },
+      { x: 0, y: 1 },
+      { x: 6, y: 3 },
+    ]);
   });
 
   it("should build updates from message ranges", async () => {

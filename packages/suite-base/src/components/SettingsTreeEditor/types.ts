@@ -20,6 +20,8 @@ export type NodeEditorProps = {
   defaultOpen?: boolean;
   filter?: string;
   focusedPath?: readonly string[];
+  getExpansionState?: (path: readonly string[]) => boolean | undefined;
+  onExpansionChange?: (change: { path: readonly string[]; open: boolean }) => void;
   path: readonly string[];
   settings?: Immutable<SettingsTreeNode>;
 };

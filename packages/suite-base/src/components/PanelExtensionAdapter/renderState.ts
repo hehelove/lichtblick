@@ -405,6 +405,7 @@ function initRenderStateBuilder(): BuildRenderStateFn {
           }
         }
         const topicsToPreloadForPanel = Array.from(preloadTopics);
+        const topicConverterFnsForBlocks = topicConverterFns;
 
         for (const block of blocksToProcess) {
           if (!block) {
@@ -440,7 +441,7 @@ function initRenderStateBuilder(): BuildRenderStateFn {
               runTopicConverters(
                 { ...messageEvent, topicConfig: configTopics[messageEvent.topic] },
                 topicConverters.byInput,
-                topicConverterFns,
+                topicConverterFnsForBlocks,
                 frames,
                 globalVariablesReadonly,
                 { emitAlert },

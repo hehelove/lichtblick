@@ -11,8 +11,15 @@ import {
   ROW_SPACING,
 } from "@lichtblick/suite-base/panels/StateTransitions/hooks/constants";
 import { UseStateTransitionsData } from "@lichtblick/suite-base/panels/StateTransitions/hooks/types";
-import { messagesToDataset } from "@lichtblick/suite-base/panels/StateTransitions/messagesToDataset";
-import { datasetContainsArray } from "@lichtblick/suite-base/panels/StateTransitions/shared";
+import {
+  messagesToDataset,
+  messagesToDynamicDatasets,
+} from "@lichtblick/suite-base/panels/StateTransitions/messagesToDataset";
+import {
+  datasetContainsArray,
+  getDynamicFields,
+  getDynamicSeries,
+} from "@lichtblick/suite-base/panels/StateTransitions/shared";
 import {
   PathState,
   StateTransitionPath,
@@ -40,43 +47,86 @@ function useStateTransitionsData(
     const outDatasets: ChartDatasets = [];
     const outPathState: PathState[] = [];
 
+    let rowIndex = 0;
     paths.forEach((path, pathIndex) => {
-      const y = -(pathIndex + 1) * ROW_SPACING;
-      outMinY = Math.min(outMinY ?? y, y - ROW_MARGIN);
-
       const blocksForPath = decodedBlocks.map((decodedBlock) => decodedBlock[path.value]);
-
-      const newBlockDataSet = messagesToDataset({
-        blocks: blocksForPath,
-        path,
-        pathIndex,
-        startTime,
-        y,
-        showPoints,
-      });
-
       const items = itemsByPath[path.value];
+      const allData = [...blocksForPath, items];
+      const { labelField, valueField } = getDynamicFields(path);
+      const dynamicSeries = getDynamicSeries(allData, labelField, valueField);
+      const rows = dynamicSeries.length > 0 ? dynamicSeries : [undefined];
+
       const isArray = datasetContainsArray([...blocksForPath, items]);
 
       outPathState.push({
         path,
-        isArray,
+        isArray: dynamicSeries.length === 0 && isArray,
+        dynamicSeries,
       });
-      outDatasets.push(newBlockDataSet);
-
-      if (items == undefined) {
+      const yValues = rows.map(() => {
+        const y = -(rowIndex + 1) * ROW_SPACING;
+        outMinY = Math.min(outMinY ?? y, y - ROW_MARGIN);
+        rowIndex++;
+        return y;
+      });
+      if (dynamicSeries.length > 0) {
+        const blockDatasets = messagesToDynamicDatasets({
+          blocks: blocksForPath,
+          path,
+          pathIndex,
+          startTime,
+          showPoints,
+          dynamicSeries,
+          yValues,
+        });
+        const itemDatasets =
+          items == undefined
+            ? []
+            : messagesToDynamicDatasets({
+                blocks: [items],
+                path,
+                pathIndex,
+                startTime,
+                showPoints,
+                dynamicSeries,
+                yValues,
+              });
+        dynamicSeries.forEach((_, index) => {
+          outDatasets.push(blockDatasets[index]!);
+          if (itemDatasets[index] != undefined) {
+            outDatasets.push(itemDatasets[index]);
+          }
+        });
         return;
       }
 
-      const newPathDataSet = messagesToDataset({
-        blocks: [items],
-        path,
-        pathIndex,
-        startTime,
-        y,
-        showPoints,
-      });
-      outDatasets.push(newPathDataSet);
+      for (const [index, series] of rows.entries()) {
+        const y = yValues[index]!;
+        outDatasets.push(
+          messagesToDataset({
+            blocks: blocksForPath,
+            path,
+            pathIndex,
+            startTime,
+            y,
+            showPoints,
+            dynamicSeries: series,
+          }),
+        );
+        if (items != undefined) {
+          outDatasets.push(
+            messagesToDataset({
+              blocks: [items],
+              path,
+              pathIndex,
+              startTime,
+              y,
+              showPoints,
+              dynamicSeries: series,
+            }),
+          );
+        }
+      }
     });
 
     return {

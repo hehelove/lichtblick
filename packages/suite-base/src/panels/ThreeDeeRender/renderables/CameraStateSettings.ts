@@ -417,15 +417,10 @@ export class CameraStateSettings extends SceneExtension implements ICameraHandle
 
   public hasModifiedCenter(): boolean {
     const cur = this.getCameraState();
-    if (!cur) {
-      return false;
-    }
     const base = this.#baselineCameraState;
     const off = cur.targetOffset;
     const center = DEFAULT_CAMERA_STATE.targetOffset;
-    if (
-      Math.hypot(off[0] - center[0], off[1] - center[1], off[2] - center[2]) > CENTER_EPS
-    ) {
+    if (Math.hypot(off[0] - center[0], off[1] - center[1], off[2] - center[2]) > CENTER_EPS) {
       return true;
     }
     if (Math.abs(cur.thetaOffset - base.thetaOffset) > CENTER_EPS) {
@@ -439,9 +434,6 @@ export class CameraStateSettings extends SceneExtension implements ICameraHandle
 
   public resetCameraCenter(): void {
     const current = this.getCameraState();
-    if (!current) {
-      return;
-    }
     const base = this.#baselineCameraState;
     const restored: CameraState = {
       ...current,

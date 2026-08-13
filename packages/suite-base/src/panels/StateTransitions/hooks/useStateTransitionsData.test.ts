@@ -7,8 +7,15 @@ import { renderHook } from "@testing-library/react";
 
 import { Time } from "@lichtblick/rostime";
 import { MessageDataItemsByPath } from "@lichtblick/suite-base/components/MessagePathSyntax/useCachedGetMessagePathDataItems";
-import { messagesToDataset } from "@lichtblick/suite-base/panels/StateTransitions/messagesToDataset";
-import { datasetContainsArray } from "@lichtblick/suite-base/panels/StateTransitions/shared";
+import {
+  messagesToDataset,
+  messagesToDynamicDatasets,
+} from "@lichtblick/suite-base/panels/StateTransitions/messagesToDataset";
+import {
+  datasetContainsArray,
+  getDynamicFields,
+  getDynamicSeries,
+} from "@lichtblick/suite-base/panels/StateTransitions/shared";
 import { StateTransitionPath } from "@lichtblick/suite-base/panels/StateTransitions/types";
 import RosTimeBuilder from "@lichtblick/suite-base/testing/builders/RosTimeBuilder";
 
@@ -19,11 +26,56 @@ jest.mock("@lichtblick/suite-base/panels/StateTransitions/shared");
 
 describe("useStateTransitionsData", () => {
   const mockMessagesToDataset = messagesToDataset as jest.Mock;
+  const mockMessagesToDynamicDatasets = messagesToDynamicDatasets as jest.Mock;
   const mockDatasetContainsArray = datasetContainsArray as jest.Mock;
+  const mockGetDynamicFields = getDynamicFields as jest.Mock;
+  const mockGetDynamicSeries = getDynamicSeries as jest.Mock;
 
   beforeEach(() => {
     mockMessagesToDataset.mockClear();
+    mockMessagesToDynamicDatasets.mockReset();
     mockDatasetContainsArray.mockClear();
+    mockGetDynamicFields.mockReturnValue({ labelField: "label", valueField: "value" });
+    mockGetDynamicSeries.mockReset();
+    mockGetDynamicSeries.mockReturnValue([]);
+  });
+
+  it("assigns a separate row to every dynamic series", () => {
+    const paths: StateTransitionPath[] = [
+      {
+        value: "path1",
+        timestampMethod: "receiveTime",
+        dynamicLabelField: "name",
+        dynamicValueField: "state",
+      },
+    ];
+    mockGetDynamicSeries.mockReturnValue([
+      { identity: "string:left", label: "left" },
+      { identity: "string:right", label: "right" },
+    ]);
+    mockDatasetContainsArray.mockReturnValue(false);
+    mockMessagesToDataset.mockImplementation(({ dynamicSeries, y }) => ({
+      label: dynamicSeries?.label,
+      data: [{ y }],
+    }));
+    mockMessagesToDynamicDatasets.mockImplementation(({ dynamicSeries, yValues }) =>
+      dynamicSeries.map((series: { label: string }, index: number) => ({
+        label: series.label,
+        data: [{ y: yValues[index] }],
+      })),
+    );
+
+    const { result } = renderHook(() =>
+      useStateTransitionsData(paths, RosTimeBuilder.time(), { path1: [] }, [], false),
+    );
+
+    expect(result.current.pathState[0]?.dynamicSeries).toHaveLength(2);
+    expect(result.current.data.datasets.map((dataset) => dataset.data[0]?.y)).toEqual([
+      -9, -9, -18, -18,
+    ]);
+    expect(result.current.minY).toBe(-20.25);
+    expect(mockMessagesToDataset).not.toHaveBeenCalled();
+    expect(mockMessagesToDynamicDatasets).toHaveBeenCalledTimes(2);
   });
 
   it("should return default values when startTime is undefined", () => {

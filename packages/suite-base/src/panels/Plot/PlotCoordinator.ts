@@ -20,7 +20,6 @@ import { UseSubscribeMessageRange } from "@lichtblick/suite-base/components/Pane
 import { Bounds1D } from "@lichtblick/suite-base/components/TimeBasedChart/types";
 import { GlobalVariables } from "@lichtblick/suite-base/hooks/useGlobalVariables";
 import { PlayerState, Topic } from "@lichtblick/suite-base/players/types";
-import { Bounds } from "@lichtblick/suite-base/types/Bounds";
 import { getContrastColor, getLineColor } from "@lichtblick/suite-base/util/plotColors";
 
 import { OffscreenCanvasRenderer } from "./OffscreenCanvasRenderer";
@@ -35,6 +34,7 @@ import {
   ConfigBounds,
   Dataset,
   InteractionEvent,
+  PlotBounds,
   PlotCoordinatorEventTypes,
   Scale,
   UpdateAction,
@@ -52,11 +52,11 @@ export class PlotCoordinator extends EventEmitter<PlotCoordinatorEventTypes> {
   private renderer: OffscreenCanvasRenderer;
   private datasetsBuilder: IDatasetsBuilder;
   private shouldSync: boolean = false;
-  private configBounds: ConfigBounds = { x: {}, y: {} };
+  private configBounds: ConfigBounds = { x: {}, y: {}, y1: {} };
   private globalBounds?: Immutable<Partial<Bounds1D>>;
   private datasetRange?: Bounds1D;
   private followRange?: number;
-  private interactionBounds?: Bounds;
+  private interactionBounds?: PlotBounds;
   private lastSeekTime = NaN;
   /** Normalized series from latest config */
   private series: Immutable<SeriesItem[]> = [];
@@ -69,7 +69,7 @@ export class PlotCoordinator extends EventEmitter<PlotCoordinatorEventTypes> {
   private currentSeconds?: number;
   private viewport: Viewport = {
     size: { width: 0, height: 0 },
-    bounds: { x: undefined, y: undefined },
+    bounds: { x: undefined, y: undefined, y1: undefined },
   };
   private latestXScale?: Scale;
   private queueDispatchRender = debouncePromise(this.dispatchRender.bind(this));
@@ -229,10 +229,17 @@ export class PlotCoordinator extends EventEmitter<PlotCoordinatorEventTypes> {
         max: config.maxYValue == undefined ? undefined : +config.maxYValue,
         min: config.minYValue == undefined ? undefined : +config.minYValue,
       },
+      y1: {
+        max: config.maxYValueRight == undefined ? undefined : +config.maxYValueRight,
+        min: config.minYValueRight == undefined ? undefined : +config.minYValueRight,
+      },
     };
     const configYBoundsChanged =
       this.configBounds.y.min !== newConfigBounds.y.min ||
       this.configBounds.y.max !== newConfigBounds.y.max;
+    const configY1BoundsChanged =
+      this.configBounds.y1.min !== newConfigBounds.y1.min ||
+      this.configBounds.y1.max !== newConfigBounds.y1.max;
     this.configBounds = newConfigBounds;
 
     const referenceLines = filterMap(config.paths, (path, idx) => {
@@ -253,13 +260,21 @@ export class PlotCoordinator extends EventEmitter<PlotCoordinatorEventTypes> {
 
     this.updateAction.showXAxisLabels = config.showXAxisLabels;
     this.updateAction.showYAxisLabels = config.showYAxisLabels;
+    this.updateAction.showYAxisRight = config.paths.some(
+      (path) => path.enabled && path.yAxisID === "y1" && !isReferenceLinePlotPathType(path),
+    );
+    this.updateAction.showYAxisLabelsRight = config.showYAxisLabelsRight;
     this.updateAction.xAxisLabel = config.xAxisLabel;
     this.updateAction.yAxisLabel = config.yAxisLabel;
+    this.updateAction.yAxisLabelRight = config.yAxisLabelRight;
     this.updateAction.referenceLines = referenceLines;
 
     if (configYBoundsChanged) {
       // Config changes to yBounds always takes precedence over user interaction changes like pan/zoom
       this.updateAction.yBounds = this.configBounds.y;
+    }
+    if (configY1BoundsChanged) {
+      this.updateAction.yBoundsRight = this.configBounds.y1;
     }
     const newSeriesKeysByTopic = new Map<string, Set<SeriesConfigKey>>();
     const newCurrentValuesByConfigIndex: unknown[] = [];
@@ -279,15 +294,18 @@ export class PlotCoordinator extends EventEmitter<PlotCoordinatorEventTypes> {
       // names But we need to consider this as a new series (new block cursor) so we compute new
       // values when variables cause the resolved path value to update.
       //
-      // We also want to re-compute values when the timestamp method changes. So we use a _key_ that
-      // is the filled path and the timestamp method. If either change, we consider this a new
-      // series.
+      // We also want to re-compute values when the timestamp method or dynamic field mapping
+      // changes. The key includes every config value that affects how source values become series.
       //
       // This key lets us treat series with the same name but different timestamp methods as distinct
       // using a key instead of the path index lets us preserve loaded data when a path is removed
-      const key = `${idx}:${path.timestampMethod}:${stringifyMessagePath(
-        filledParsed,
-      )}` as SeriesConfigKey;
+      const key = JSON.stringify([
+        idx,
+        path.timestampMethod,
+        stringifyMessagePath(filledParsed),
+        path.dynamicLabelField ?? "",
+        path.dynamicValueField ?? "",
+      ]) as SeriesConfigKey;
 
       // Keep current values for paths that match existing ones
       const existingSeries = this.series.find((series) => series.key === key);
@@ -315,6 +333,10 @@ export class PlotCoordinator extends EventEmitter<PlotCoordinatorEventTypes> {
         timestampMethod: path.timestampMethod,
         showLine: path.showLine ?? true,
         enabled: path.enabled,
+        yAxisID: path.yAxisID,
+        dynamicLabelField: path.dynamicLabelField === "" ? undefined : path.dynamicLabelField,
+        dynamicValueField: path.dynamicValueField === "" ? undefined : path.dynamicValueField,
+        dynamicColorOverride: path.color != undefined,
       };
     });
 
@@ -350,6 +372,12 @@ export class PlotCoordinator extends EventEmitter<PlotCoordinatorEventTypes> {
   public setZoomMode(mode: "x" | "xy" | "y"): void {
     this.updateAction.zoomMode = mode;
     this.queueDispatchRender();
+  }
+
+  public setDynamicSeriesEnabled(identity: string, options: { enabled: boolean }): void {
+    this.datasetsBuilder.setDynamicSeriesEnabled?.(identity, options);
+    this.emitDynamicSeries();
+    this.queueDispatchDownsample();
   }
 
   public resetBounds(): void {
@@ -446,6 +474,7 @@ export class PlotCoordinator extends EventEmitter<PlotCoordinatorEventTypes> {
       const yMin = this.interactionBounds?.y.min ?? this.configBounds.y.min;
       const yMax = this.interactionBounds?.y.max ?? this.configBounds.y.max;
       this.updateAction.yBounds = { min: yMin, max: yMax };
+      this.updateAction.yBoundsRight = this.configBounds.y1;
       this.shouldResetY = false;
     }
 
@@ -472,9 +501,15 @@ export class PlotCoordinator extends EventEmitter<PlotCoordinatorEventTypes> {
     // The viewport has changed from some render interactions so we need to consider new datasets
     const x = this.getXBounds();
     const y = this.interactionBounds?.y ?? this.configBounds.y;
-    if (!_.isEqual(this.viewport.bounds.x, x) || !_.isEqual(this.viewport.bounds.y, y)) {
+    const y1 = this.interactionBounds?.y1 ?? this.configBounds.y1;
+    if (
+      !_.isEqual(this.viewport.bounds.x, x) ||
+      !_.isEqual(this.viewport.bounds.y, y) ||
+      !_.isEqual(this.viewport.bounds.y1, y1)
+    ) {
       this.viewport.bounds.x = x;
       this.viewport.bounds.y = y;
+      this.viewport.bounds.y1 = y1;
       this.queueDispatchDownsample();
     }
   }
@@ -490,11 +525,25 @@ export class PlotCoordinator extends EventEmitter<PlotCoordinatorEventTypes> {
       return;
     }
     this.emit("pathsWithMismatchedDataLengthsChanged", [...result.pathsWithMismatchedDataLengths]);
+    this.emitDynamicSeries();
 
     // Use Array.from to fill in any `undefined` entries with an empty dataset (`map` would not
     // work for sparse arrays)
     const datasets = Array.from(result.datasetsByConfigIndex, replaceUndefinedWithEmptyDataset);
     this.queueDatasetsRender(datasets);
+  }
+
+  private emitDynamicSeries(): void {
+    this.emit(
+      "dynamicSeriesChanged",
+      (this.datasetsBuilder.getDynamicSeries?.() ?? []).map((item) => ({
+        identity: item.compositeKey!,
+        configIndex: item.dynamicParentConfigIndex ?? item.configIndex,
+        label: item.subLabel!,
+        color: item.color,
+        enabled: item.enabled,
+      })),
+    );
   }
 
   /** Render the provided datasets */

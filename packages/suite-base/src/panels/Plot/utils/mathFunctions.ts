@@ -14,20 +14,119 @@
 //   found at http://www.apache.org/licenses/LICENSE-2.0
 //   You may not use this file except in compliance with the License.
 
-import { MATH_FUNCTIONS } from "@lichtblick/suite-base/panels/Plot/constants";
+import { isQuaternion, quatToYpr, quatToYrp } from "@lichtblick/suite-base/util/quatToEuler";
 
-export type MathFunction = (arg: number) => number;
+import { getChartValue } from "./datum";
+
+export type MathFunction = (arg: unknown) => number;
 
 interface PlotMathFunctions {
-  [key: string]: (value: number) => number;
-  negative: (value: number) => number;
-  deg2rad: (value: number) => number;
-  rad2deg: (value: number) => number;
+  [key: string]: MathFunction;
+  abs: MathFunction;
+  negative: MathFunction;
+  deg2rad: MathFunction;
+  rad2deg: MathFunction;
+  yaw: MathFunction;
+  pitch: MathFunction;
+  roll: MathFunction;
+  ypr: MathFunction;
+  yrp: MathFunction;
+  norm: MathFunction;
 }
 
 export const mathFunctions: PlotMathFunctions = {
-  ...MATH_FUNCTIONS,
-  negative: (value: number) => -value,
-  deg2rad: (degrees: number) => degrees * (Math.PI / 180),
-  rad2deg: (radians: number) => radians * (180 / Math.PI),
+  abs: numericFunction(Math.abs),
+  acos: numericFunction(Math.acos),
+  asin: numericFunction(Math.asin),
+  atan: numericFunction(Math.atan),
+  ceil: numericFunction(Math.ceil),
+  cos: numericFunction(Math.cos),
+  log: numericFunction(Math.log),
+  log1p: numericFunction(Math.log1p),
+  log2: numericFunction(Math.log2),
+  log10: numericFunction(Math.log10),
+  round: numericFunction(Math.round),
+  sign: numericFunction(Math.sign),
+  sin: numericFunction(Math.sin),
+  sqrt: numericFunction(Math.sqrt),
+  tan: numericFunction(Math.tan),
+  trunc: numericFunction(Math.trunc),
+  negative: numericFunction((value) => -value),
+  deg2rad: numericFunction((value) => value * (Math.PI / 180)),
+  rad2deg: numericFunction((value) => value * (180 / Math.PI)),
+  yaw: (value) => {
+    if (!isQuaternion(value)) {
+      return NaN;
+    }
+    const [yaw] = quatToYpr(value.x, value.y, value.z, value.w);
+    return yaw;
+  },
+
+  pitch: (value) => {
+    if (!isQuaternion(value)) {
+      return NaN;
+    }
+    const [, pitch] = quatToYpr(value.x, value.y, value.z, value.w);
+    return pitch;
+  },
+
+  roll: (value) => {
+    if (!isQuaternion(value)) {
+      return NaN;
+    }
+    const [, , roll] = quatToYpr(value.x, value.y, value.z, value.w);
+    return roll;
+  },
+
+  // Message-path modifiers return one scalar; both ordering variants return yaw.
+  ypr: (value) => {
+    if (!isQuaternion(value)) {
+      return NaN;
+    }
+    const [yaw] = quatToYpr(value.x, value.y, value.z, value.w);
+    return yaw;
+  },
+
+  yrp: (value) => {
+    if (!isQuaternion(value)) {
+      return NaN;
+    }
+    const [yaw] = quatToYrp(value.x, value.y, value.z, value.w);
+    return yaw;
+  },
+
+  norm: (value) => {
+    if (typeof value === "number") {
+      return Math.abs(value);
+    }
+    if (Array.isArray(value) || (ArrayBuffer.isView(value) && !(value instanceof DataView))) {
+      return norm(Array.from(value as ArrayLike<unknown>));
+    }
+    if (typeof value === "object" && value != undefined) {
+      const vector = value as Record<string, unknown>;
+      const components = [vector.x, vector.y, vector.z, vector.w].filter(
+        (component) => component != undefined,
+      );
+      return components.length >= 2 ? norm(components) : NaN;
+    }
+    return NaN;
+  },
 };
+
+export function getMathFunction(modifier: string | undefined): MathFunction | undefined {
+  return modifier ? mathFunctions[modifier] : undefined;
+}
+
+function numericFunction(fn: (value: number) => number): MathFunction {
+  return (value) => {
+    const chartValue = getChartValue(value);
+    return chartValue == undefined ? NaN : fn(chartValue);
+  };
+}
+
+function norm(values: readonly unknown[]): number {
+  if (!values.every((value): value is number => typeof value === "number")) {
+    return NaN;
+  }
+  return Math.hypot(...values);
+}

@@ -18,7 +18,6 @@ import {
 } from "@lichtblick/suite-base/components/Chart/worker/eventHandler";
 import { DEFAULT_ANNOTATION } from "@lichtblick/suite-base/panels/Plot/constants";
 import { getChartOptions } from "@lichtblick/suite-base/panels/Plot/utils/getChartOptions";
-import { Bounds } from "@lichtblick/suite-base/types/Bounds";
 import { maybeCast } from "@lichtblick/suite-base/util/maybeCast";
 
 import {
@@ -29,6 +28,7 @@ import {
   HoverElement,
   InteractionEvent,
   MutableContext,
+  PlotBounds,
   Scale,
   UpdateAction,
   ZoomableChart,
@@ -89,7 +89,7 @@ export class ChartRenderer {
     this.#chartInstance = chartInstance;
   }
 
-  public update(action: Immutable<UpdateAction>): Bounds | undefined {
+  public update(action: Immutable<UpdateAction>): PlotBounds | undefined {
     if (action.size) {
       this.#chartInstance.canvas.width = action.size.width;
       this.#chartInstance.canvas.height = action.size.height;
@@ -103,6 +103,20 @@ export class ChartRenderer {
       }
       if (scaleOption && scaleOption.max !== action.yBounds.max) {
         scaleOption.max = action.yBounds.max;
+      }
+    }
+
+    if (action.yBoundsRight) {
+      const scaleOption = this.#chartInstance.options.scales?.y1 as
+        | { min?: number; max?: number }
+        | undefined;
+      if (scaleOption) {
+        if (scaleOption.min !== action.yBoundsRight.min) {
+          scaleOption.min = action.yBoundsRight.min;
+        }
+        if (scaleOption.max !== action.yBoundsRight.max) {
+          scaleOption.max = action.yBoundsRight.max;
+        }
       }
     }
 
@@ -124,6 +138,20 @@ export class ChartRenderer {
       }
     }
 
+    if (action.showYAxisRight != undefined) {
+      const scaleOption = this.#chartInstance.options.scales?.y1;
+      if (scaleOption) {
+        scaleOption.display = action.showYAxisRight;
+      }
+    }
+
+    if (action.showYAxisLabelsRight != undefined) {
+      const scaleOption = this.#chartInstance.options.scales?.y1;
+      if (scaleOption?.ticks) {
+        scaleOption.ticks.display = action.showYAxisLabelsRight;
+      }
+    }
+
     if (action.showXAxisLabels != undefined) {
       const ticksOptions = this.#chartInstance.options.scales?.x?.ticks;
       if (ticksOptions) {
@@ -137,6 +165,19 @@ export class ChartRenderer {
         yScale.title = {
           display: action.yAxisLabel.length > 0,
           text: action.yAxisLabel,
+          color: this.#titleColor,
+        };
+      }
+    }
+
+    if (action.yAxisLabelRight != undefined) {
+      const y1Scale = this.#chartInstance.options.scales?.y1 as
+        | { title?: { display?: boolean; text?: string; color?: string } }
+        | undefined;
+      if (y1Scale) {
+        y1Scale.title = {
+          display: action.yAxisLabelRight.length > 0,
+          text: action.yAxisLabelRight,
           color: this.#titleColor,
         };
       }
@@ -187,6 +228,7 @@ export class ChartRenderer {
     // fill our rpc scales - we only support x and y scales for now
     const xScale = this.#chartInstance.scales.x;
     const yScale = this.#chartInstance.scales.y;
+    const y1Scale = this.#chartInstance.scales.y1;
 
     if (!xScale || !yScale) {
       return undefined;
@@ -201,6 +243,7 @@ export class ChartRenderer {
         min: yScale.min,
         max: yScale.max,
       },
+      y1: y1Scale ? { min: y1Scale.min, max: y1Scale.max } : undefined,
     };
   }
 

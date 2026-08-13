@@ -62,6 +62,7 @@ import {
 import type { LayerSettingsTransform } from "./renderables/FrameAxes";
 import { PublishClickEventMap } from "./renderables/PublishClickTool";
 import { DEFAULT_PUBLISH_SETTINGS } from "./renderables/PublishSettings";
+import { synchronizedTopics } from "./topicSynchronization";
 import { Shared3DPanelState, ThreeDeeRenderProps } from "./types";
 
 /**
@@ -129,6 +130,7 @@ export function ThreeDeeRender(props: Readonly<ThreeDeeRenderProps>): React.JSX.
       // deep partial on config, makes gradient tuple type [string | undefined, string | undefined]
       // which is incompatible with `Partial<ColorModeSettings>`
       imageMode: (partialConfig?.imageMode ?? {}) as Partial<ImageModeConfig>,
+      topicsSynchronize: partialConfig?.topicsSynchronize,
     };
   });
   const configRef = useLatest(config);
@@ -388,6 +390,13 @@ export function ThreeDeeRender(props: Readonly<ThreeDeeRenderProps>): React.JSX.
     [topics],
   );
   const isPreloadingEnabled = config.scene.transforms?.enablePreloading === true;
+  const topicsToSynchronize = useMemo(
+    () => synchronizedTopics(config, topics, interfaceMode),
+    [config, interfaceMode, topics],
+  );
+  useEffect(() => {
+    renderer?.setSynchronizedTopics(topicsToSynchronize);
+  }, [renderer, topicsToSynchronize]);
   useEffect(() => {
     // Surface an informational alert whenever there's a transform topic
     setPanelAlert?.(
@@ -631,7 +640,7 @@ export function ThreeDeeRender(props: Readonly<ThreeDeeRenderProps>): React.JSX.
       }
       if (shouldSubscribe) {
         const sampling =
-          rendererSubscription.preload === true
+          rendererSubscription.preload === true || topicsToSynchronize.has(topic.name)
             ? undefined
             : { mode: "latest-per-render-tick" as const };
         newSubscriptions.push({
@@ -673,6 +682,7 @@ export function ThreeDeeRender(props: Readonly<ThreeDeeRenderProps>): React.JSX.
     // Need to update subscriptions when layers change as URDF layers might subscribe to topics
     // shouldSubscribe values will be re-evaluated
     config.layers,
+    topicsToSynchronize,
   ]);
 
   // Notify the extension context when our subscription list changes

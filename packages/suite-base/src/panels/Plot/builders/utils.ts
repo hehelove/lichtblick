@@ -45,6 +45,10 @@ export function setSeries(
       pointHoverRadius: 3,
       pointBackgroundColor: item.showLine ? item.contrastColor : item.color,
       pointBorderColor: "transparent",
+      yAxisID: item.yAxisID ?? "y",
+      label: item.subLabel,
+      seriesIdentity: item.compositeKey,
+      configIndex: item.configIndex,
     };
 
     newSeries.set(item.key, existingSeries);

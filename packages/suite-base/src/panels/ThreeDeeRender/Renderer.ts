@@ -64,6 +64,7 @@ import { SceneExtensionConfig } from "./SceneExtensionConfig";
 import { ScreenOverlay } from "./ScreenOverlay";
 import { SettingsManager, SettingsTreeEntry } from "./SettingsManager";
 import { SharedGeometry } from "./SharedGeometry";
+import { SyncManager } from "./SyncManager";
 import { CameraState } from "./camera";
 import { DARK_OUTLINE, LIGHT_OUTLINE, stringToRgb } from "./color";
 import { HOVER_PICK_THROTTLE_MS } from "./constants";
@@ -99,6 +100,22 @@ import {
   Transform,
 } from "./transforms";
 import { InterfaceMode } from "./types";
+
+function synchronizationConfigChanged(
+  previous: Immutable<RendererConfig>,
+  current: Immutable<RendererConfig>,
+): boolean {
+  if (previous.topicsSynchronize !== current.topicsSynchronize) {
+    return true;
+  }
+
+  const topicNames = new Set([...Object.keys(previous.topics), ...Object.keys(current.topics)]);
+  return Array.from(topicNames).some(
+    (topic) =>
+      previous.topics[topic]?.visible !== current.topics[topic]?.visible ||
+      previous.topics[topic]?.synchronize !== current.topics[topic]?.synchronize,
+  );
+}
 
 const log = Logger.getLogger(__filename);
 
@@ -188,6 +205,7 @@ export class Renderer extends EventEmitter<RendererEvents> implements IRenderer 
   public schemaSubscriptions = new Map<string, RendererSubscription[]>();
   // topicName -> RendererSubscription[]
   public topicSubscriptions = new Map<string, RendererSubscription[]>();
+  readonly #syncManager = new SyncManager();
 
   /** HUD manager instance */
   public hud;
@@ -641,6 +659,7 @@ export class Renderer extends EventEmitter<RendererEvents> implements IRenderer 
   };
 
   #clearSubscriptionQueues(): void {
+    this.#syncManager.clear();
     for (const subscriptions of this.topicSubscriptions.values()) {
       for (const subscription of subscriptions) {
         subscription.queue = undefined;
@@ -747,7 +766,11 @@ export class Renderer extends EventEmitter<RendererEvents> implements IRenderer 
   }
 
   public updateConfig(updateHandler: (draft: RendererConfig) => void): void {
-    this.config = produce(this.config, updateHandler);
+    const previousConfig = this.config;
+    this.config = produce(previousConfig, updateHandler);
+    if (synchronizationConfigChanged(previousConfig, this.config)) {
+      this.#syncManager.clear();
+    }
     this.emit("configChange", this);
   }
 
@@ -1041,6 +1064,8 @@ export class Renderer extends EventEmitter<RendererEvents> implements IRenderer 
   /** Update the list of topics and rebuild all settings nodes when the identity
    * of the topics list changes */
   public setTopics(topics: ReadonlyArray<Topic> | undefined): void {
+    // A new source may expose the same topic list object, so clear before the identity shortcut.
+    this.#syncManager.clear();
     if (this.topics === topics) {
       return;
     }
@@ -1053,8 +1078,12 @@ export class Renderer extends EventEmitter<RendererEvents> implements IRenderer 
 
     // Rebuild the settings nodes for all scene extensions
     for (const extension of this.sceneExtensions.values()) {
-      this.settings.setNodesForKey(extension.extensionId, extension.settingsNodes());
+      this.settings.setNodesForKey(extension.extensionId, extension.settingsNodesWithTopicSync());
     }
+  }
+
+  public setSynchronizedTopics(topics: ReadonlySet<string>): void {
+    this.#syncManager.setTopics(topics);
   }
 
   public setParameters(parameters: ReadonlyMap<string, ParameterValue> | undefined): void {
@@ -1152,10 +1181,12 @@ export class Renderer extends EventEmitter<RendererEvents> implements IRenderer 
       this.addMessageEvent(messageEvent, { inBatch: true });
     }
 
+    const synchronizedMessageEvents = this.#syncManager.addMessageEventBatch(messageEvents);
+
     // Group messages by topic and schema for efficient batching
     const messagesByTopic = new Map<string, MessageEvent[]>();
     const messagesBySchema = new Map<string, MessageEvent[]>();
-    for (const msg of messageEvents) {
+    for (const msg of synchronizedMessageEvents) {
       // Group by topic
       let topicMessages = messagesByTopic.get(msg.topic);
       if (topicMessages == undefined) {
@@ -1219,8 +1250,16 @@ export class Renderer extends EventEmitter<RendererEvents> implements IRenderer 
       return;
     }
 
-    queueMessage(messageEvent, this.topicSubscriptions.get(messageEvent.topic));
-    queueMessage(messageEvent, this.schemaSubscriptions.get(messageEvent.schemaName));
+    for (const synchronizedMessageEvent of this.#syncManager.addMessageEvent(messageEvent)) {
+      queueMessage(
+        synchronizedMessageEvent,
+        this.topicSubscriptions.get(synchronizedMessageEvent.topic),
+      );
+      queueMessage(
+        synchronizedMessageEvent,
+        this.schemaSubscriptions.get(synchronizedMessageEvent.schemaName),
+      );
+    }
   }
 
   /** Match the behavior of `tf::Transformer` by stripping leading slashes from

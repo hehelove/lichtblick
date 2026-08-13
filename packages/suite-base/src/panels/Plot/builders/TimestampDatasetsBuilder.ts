@@ -28,9 +28,9 @@ import type {
   UpdateDataAction,
 } from "./TimestampDatasetsBuilderImpl";
 import { buildCurrentSeriesActions, buildFullSeriesActions } from "./utils";
-import { MATH_FUNCTIONS } from "../constants";
 import { getChartValue, isChartValue } from "../utils/datum";
-import { MathFunction } from "../utils/mathFunctions";
+import { DynamicSeriesResolver, isDynamicSeries } from "../utils/dynamicSeries";
+import { getMathFunction, MathFunction } from "../utils/mathFunctions";
 
 // If the datasets builder is garbage collected we also need to cleanup the worker
 // This registry ensures the worker is cleaned up when the builder is garbage collected
@@ -62,6 +62,7 @@ export class TimestampDatasetsBuilder implements IDatasetsBuilder {
   // True once handleMessageRange has been called — indicates a range-capable source (file/bag).
   // When true, handlePlayerState skips append-current since the full history comes from the range.
   #hasRangeSource = false;
+  readonly #dynamicResolver = new DynamicSeriesResolver();
 
   public constructor() {
     const worker = new Worker(
@@ -87,13 +88,12 @@ export class TimestampDatasetsBuilder implements IDatasetsBuilder {
     const msgEvents = activeData.messages;
     let datasetsChanged = false;
     if (!this.#hasRangeSource && msgEvents.length > 0) {
+      const staticSeries = this.#series.filter(({ config }) => !isDynamicSeries(config));
       const { actions: seriesActions, datasetsChanged: seriesChanged } = buildCurrentSeriesActions(
-        this.#series,
+        staticSeries,
         { didSeek, hasRangeSource: this.#hasRangeSource },
         (config) => {
-          const mathFn = config.parsed.modifier
-            ? MATH_FUNCTIONS[config.parsed.modifier]
-            : undefined;
+          const mathFn = getMathFunction(config.parsed.modifier);
           return readMessagePathItems(
             msgEvents,
             config.parsed,
@@ -105,6 +105,12 @@ export class TimestampDatasetsBuilder implements IDatasetsBuilder {
       );
       this.#pendingDispatch.push(...(seriesActions as UpdateDataAction[]));
       datasetsChanged ||= seriesChanged;
+      datasetsChanged ||= this.#appendDynamicMessages(
+        msgEvents,
+        activeData.startTime,
+        didSeek ? "reset-current" : undefined,
+        "append-current",
+      );
     }
 
     return {
@@ -124,8 +130,9 @@ export class TimestampDatasetsBuilder implements IDatasetsBuilder {
       return;
     }
 
-    const actions = buildFullSeriesActions(this.#series, topic, options, (config) => {
-      const mathFn = config.parsed.modifier ? MATH_FUNCTIONS[config.parsed.modifier] : undefined;
+    const staticSeries = this.#series.filter(({ config }) => !isDynamicSeries(config));
+    const actions = buildFullSeriesActions(staticSeries, topic, options, (config) => {
+      const mathFn = getMathFunction(config.parsed.modifier);
       return readMessagePathItems(
         messages,
         config.parsed,
@@ -135,14 +142,98 @@ export class TimestampDatasetsBuilder implements IDatasetsBuilder {
       );
     });
     this.#pendingDispatch.push(...(actions as UpdateDataAction[]));
+    this.#appendDynamicMessages(
+      messages,
+      startTime,
+      options.isReset ? "reset-full" : undefined,
+      "append-full",
+    );
   }
 
   public setSeries(series: Immutable<SeriesItem[]>): void {
     this.#series = series.map((item) => ({ config: item }));
+    this.#dynamicResolver.setSeries(series);
     this.#pendingDispatch.push({
       type: "update-series-config",
-      seriesItems: series,
+      seriesItems: this.#dynamicResolver.getSeries(),
     });
+  }
+
+  public setDynamicSeriesEnabled(identity: string, options: { enabled: boolean }): void {
+    this.#dynamicResolver.setEnabled(identity, options);
+    this.#pendingDispatch.push({
+      type: "update-series-config",
+      seriesItems: this.#dynamicResolver.getSeries(),
+    });
+  }
+
+  public getDynamicSeries(): Immutable<SeriesItem[]> {
+    return this.#dynamicResolver.getSeries().filter((item) => item.compositeKey != undefined);
+  }
+
+  #appendDynamicMessages(
+    events: Immutable<MessageEvent[]>,
+    startTime: Immutable<Time>,
+    resetType: "reset-current" | "reset-full" | undefined,
+    appendType: "append-current" | "append-full",
+  ): boolean {
+    let changed = false;
+    const actions: UpdateDataAction[] = [];
+    for (const { config } of this.#series) {
+      const itemsByKey = new Map<SeriesItem["key"], DataItem[]>();
+      for (const event of events) {
+        if (event.topic !== config.parsed.topicName) {
+          continue;
+        }
+        const timestamp =
+          config.timestampMethod === "receiveTime"
+            ? event.receiveTime
+            : getTimestampForMessage(event.message);
+        if (!timestamp) {
+          continue;
+        }
+        const values = new Map<string, ReturnType<DynamicSeriesResolver["resolve"]>[number]>();
+        for (const item of simpleGetMessagePathDataItems(event, config.parsed)) {
+          for (const value of this.#dynamicResolver.resolve(config, item)) {
+            values.set(value.identity, value);
+          }
+        }
+        if (!isDynamicSeries(config) && values.size === 0) {
+          continue;
+        }
+        const x = toSec(subtractTime(timestamp, startTime));
+        for (const child of this.#dynamicResolver.getChildren(config.key)) {
+          const value = values.get(child.compositeKey!);
+          const y = value?.value ?? NaN;
+          const items = itemsByKey.get(child.key) ?? [];
+          items.push({
+            x,
+            y,
+            value: y,
+            receiveTime: event.receiveTime,
+            headerStamp: getTimestampForMessage(event.message),
+          });
+          itemsByKey.set(child.key, items);
+        }
+      }
+      for (const child of this.#dynamicResolver.getChildren(config.key)) {
+        if (resetType) {
+          actions.push({ type: resetType, series: child.key });
+        }
+        const items = itemsByKey.get(child.key) ?? [];
+        if (items.length > 0) {
+          actions.push({ type: appendType, series: child.key, items });
+          changed = true;
+        }
+      }
+    }
+    if (actions.length > 0) {
+      this.#pendingDispatch.push(
+        { type: "update-series-config", seriesItems: this.#dynamicResolver.getSeries() },
+        ...actions,
+      );
+    }
+    return changed;
   }
 
   public async getViewportDatasets(
@@ -178,6 +269,24 @@ function readMessagePathItems(
 
     const items = simpleGetMessagePathDataItems(event, path);
     for (const item of items) {
+      if (mathFunction) {
+        const headerStamp = getTimestampForMessage(event.message);
+        const timestamp = timestampMethod === "receiveTime" ? event.receiveTime : headerStamp;
+        if (!timestamp) {
+          continue;
+        }
+        const xValue = toSec(subtractTime(timestamp, startTime));
+        const mathModified = mathFunction(item);
+        out.push({
+          x: xValue,
+          y: mathModified,
+          receiveTime: event.receiveTime,
+          headerStamp,
+          value: mathModified,
+        });
+        continue;
+      }
+
       if (!isChartValue(item)) {
         continue;
       }
@@ -193,13 +302,12 @@ function readMessagePathItems(
       }
 
       const xValue = toSec(subtractTime(timestamp, startTime));
-      const mathModified = mathFunction ? mathFunction(chartValue) : chartValue;
       out.push({
         x: xValue,
-        y: mathModified,
+        y: chartValue,
         receiveTime: event.receiveTime,
         headerStamp,
-        value: mathFunction ? mathModified : item,
+        value: item,
       });
     }
   }

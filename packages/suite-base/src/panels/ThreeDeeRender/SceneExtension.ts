@@ -5,6 +5,7 @@
 // License, v2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/
 
+import { t } from "i18next";
 import * as _ from "lodash-es";
 import * as THREE from "three";
 import { DeepPartial, Writable } from "ts-essentials";
@@ -18,6 +19,7 @@ import { Path } from "./LayerErrors";
 import { Renderable } from "./Renderable";
 import type { SettingsTreeEntry } from "./SettingsManager";
 import { missingTransformMessage, MISSING_TRANSFORM } from "./renderables/transforms";
+import { extensionSupportsTopicSynchronization } from "./topicSynchronization";
 import { AnyFrameId } from "./transforms";
 import { updatePose } from "./updatePose";
 
@@ -148,7 +150,43 @@ export class SceneExtension<
    * `settingsNodes()` method will be called to retrieve the latest nodes.
    */
   public updateSettingsTree(): void {
-    this.renderer.settings.setNodesForKey(this.extensionId, this.settingsNodes());
+    this.renderer.settings.setNodesForKey(this.extensionId, this.settingsNodesWithTopicSync());
+  }
+
+  public settingsNodesWithTopicSync(): SettingsTreeEntry[] {
+    const entries = this.settingsNodes();
+    if (
+      this.renderer.interfaceMode !== "3d" ||
+      !extensionSupportsTopicSynchronization(this.extensionId)
+    ) {
+      return entries;
+    }
+    for (const entry of entries) {
+      const topic = entry.path[0] === "topics" ? entry.path[1] : undefined;
+      if (topic != undefined) {
+        const handler = entry.node.handler;
+        entry.node.fields = {
+          synchronize: {
+            label: t("threeDee:sync"),
+            input: "boolean",
+            value: this.renderer.config.topics[topic]?.synchronize ?? false,
+          },
+          ...entry.node.fields,
+        };
+        entry.node.handler = (action) => {
+          if (
+            action.action === "update" &&
+            action.payload.path.length === 3 &&
+            action.payload.path[2] === "synchronize"
+          ) {
+            this.saveSetting(action.payload.path, action.payload.value);
+            return;
+          }
+          handler?.(action);
+        };
+      }
+    }
+    return entries;
   }
 
   /**

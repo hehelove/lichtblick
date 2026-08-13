@@ -80,7 +80,7 @@ type UpdateSeriesFullAction = {
 
 type UpdateSeriesConfigAction = {
   type: "update-series-config";
-  seriesItems: SeriesItem[];
+  seriesItems: Immutable<SeriesItem[]>;
 };
 
 export type UpdateDataAction =
@@ -128,6 +128,10 @@ export class CustomDatasetsBuilderImpl {
         pointHoverRadius: 3,
         pointBackgroundColor: showLine ? contrastColor : color,
         pointBorderColor: "transparent",
+        yAxisID: series.config.yAxisID ?? "y",
+        label: series.config.subLabel,
+        seriesIdentity: series.config.compositeKey,
+        configIndex: series.config.configIndex,
         data: [],
       };
 
@@ -191,6 +195,8 @@ export class CustomDatasetsBuilderImpl {
           });
         }
       } else {
+        const viewportYBounds =
+          series.config.yAxisID === "y1" ? viewport.bounds.y1 : viewport.bounds.y;
         const downsampleViewport = {
           width: viewport.size.width,
           height: viewport.size.height,
@@ -200,8 +206,8 @@ export class CustomDatasetsBuilderImpl {
               max: viewport.bounds.x?.max ?? xBounds.max,
             },
             y: {
-              min: viewport.bounds.y?.min ?? yBounds.min,
-              max: viewport.bounds.y?.max ?? yBounds.max,
+              min: viewportYBounds?.min ?? yBounds.min,
+              max: viewportYBounds?.max ?? yBounds.max,
             },
           },
         };

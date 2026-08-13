@@ -97,15 +97,6 @@ function StateTransitions(props: StateTransitionPanelProps) {
 
   const itemsByPath = useMessagesByPath(hasRangeData ? EMPTY_PATHS : pathStrings);
 
-  const { height, heightPerTopic } = useMemo(() => {
-    const onlyTopicsHeight = paths.length * 64;
-    const xAxisHeight = 30;
-    return {
-      height: Math.max(80, onlyTopicsHeight + xAxisHeight),
-      heightPerTopic: paths.length === 0 ? 0 : onlyTopicsHeight / paths.length,
-    };
-  }, [paths.length]);
-
   const newItemsByPath = hasRangeData ? EMPTY_ITEMS_BY_PATH : itemsByPath;
 
   const showPoints = config.showPoints === true;
@@ -117,6 +108,18 @@ function StateTransitions(props: StateTransitionPanelProps) {
     decodedMessages,
     showPoints,
   );
+
+  const { height, heightPerRow } = useMemo(() => {
+    const rowCount = pathState.reduce(
+      (count, state) => count + Math.max(1, state.dynamicSeries?.length ?? 0),
+      0,
+    );
+    const rowsHeight = rowCount * 64;
+    return {
+      height: Math.max(80, rowsHeight + 30),
+      heightPerRow: rowCount === 0 ? 0 : rowsHeight / rowCount,
+    };
+  }, [pathState]);
 
   const { yScale, xScale, databounds, width, sizeRef } = useChartScalesAndBounds(
     minY,
@@ -168,8 +171,8 @@ function StateTransitions(props: StateTransitionPanelProps) {
             currentTime={currentTimeSinceStart}
           />
           <PathLegend
-            paths={paths}
-            heightPerTopic={heightPerTopic}
+            pathState={pathState}
+            heightPerRow={heightPerRow}
             setFocusedPath={setFocusedPath}
             saveConfig={saveConfig}
           />

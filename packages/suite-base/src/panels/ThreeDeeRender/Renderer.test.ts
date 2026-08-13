@@ -515,7 +515,7 @@ describe("3D Renderer", () => {
 
     renderer.resetView();
     expect(renderer.canResetView()).toBe(false);
-    expect(cameraStateSettings.getCameraState()?.targetOffset).toEqual([
+    expect(cameraStateSettings.getCameraState().targetOffset).toEqual([
       ...DEFAULT_CAMERA_STATE.targetOffset,
     ]);
 
@@ -685,6 +685,144 @@ describe("3D Renderer", () => {
       renderer.addMessageEvent(message);
     }).not.toThrow();
 
+    renderer.dispose();
+  });
+
+  it("uses identical timestamp synchronization for single and batch message paths", () => {
+    const makeMessage = (topic: string, timestamp: bigint): MessageEvent => ({
+      topic,
+      receiveTime: fromNanoSec(timestamp),
+      schemaName: "test.Message",
+      message: { header: { stamp: fromNanoSec(timestamp) } },
+      sizeInBytes: 0,
+    });
+    const run = (addMessages: (renderer: Renderer, messages: MessageEvent[]) => void) => {
+      const renderer = new Renderer({ ...defaultRendererProps, canvas });
+      const handler = jest.fn();
+      renderer.schemaSubscriptions.set("test.Message", [{ handler }]);
+      renderer.setSynchronizedTopics(new Set(["/a", "/b"]));
+      const messages = [makeMessage("/a", 1n), makeMessage("/b", 2n), makeMessage("/b", 1n)];
+
+      addMessages(renderer, messages);
+      renderer.animationFrame();
+      const handledTopics = handler.mock.calls.map(([event]: [MessageEvent]) => event.topic);
+      renderer.dispose();
+      return handledTopics;
+    };
+
+    expect(
+      run((renderer, messages) => {
+        messages.forEach((event) => {
+          renderer.addMessageEvent(event);
+        });
+      }),
+    ).toEqual(["/a", "/b"]);
+    expect(
+      run((renderer, messages) => {
+        renderer.addMessageEventBatch(messages);
+      }),
+    ).toEqual(["/a", "/b"]);
+  });
+
+  it("synchronizes foxglove.SceneUpdate messages by their first entity timestamp", () => {
+    const renderer = new Renderer({ ...defaultRendererProps, canvas });
+    const handler = jest.fn();
+    renderer.schemaSubscriptions.set("foxglove.SceneUpdate", [{ handler }]);
+    renderer.setSynchronizedTopics(new Set(["/scene-a", "/scene-b"]));
+    const makeSceneUpdate = (topic: string, timestamp: bigint): MessageEvent => ({
+      topic,
+      receiveTime: fromNanoSec(100n + timestamp),
+      schemaName: "foxglove.SceneUpdate",
+      message: {
+        entities: [{ timestamp: fromNanoSec(timestamp), frame_id: "map" }],
+        deletions: [],
+      },
+      sizeInBytes: 0,
+    });
+
+    renderer.addMessageEventBatch([
+      makeSceneUpdate("/scene-a", 1n),
+      makeSceneUpdate("/scene-b", 2n),
+      makeSceneUpdate("/scene-b", 1n),
+    ]);
+    renderer.animationFrame();
+
+    expect(handler.mock.calls.map(([event]: [MessageEvent]) => event.topic)).toEqual([
+      "/scene-a",
+      "/scene-b",
+    ]);
+    renderer.dispose();
+  });
+
+  it("clears pending synchronized messages on seek", () => {
+    const renderer = new Renderer({ ...defaultRendererProps, canvas });
+    const handler = jest.fn();
+    renderer.schemaSubscriptions.set("test.Message", [{ handler }]);
+    renderer.setSynchronizedTopics(new Set(["/a", "/b"]));
+    const makeMessage = (topic: string): MessageEvent => ({
+      topic,
+      receiveTime: fromNanoSec(1n),
+      schemaName: "test.Message",
+      message: { header: { stamp: fromNanoSec(1n) } },
+      sizeInBytes: 0,
+    });
+    renderer.addMessageEvent(makeMessage("/a"));
+
+    renderer.handleSeek(0n);
+    renderer.addMessageEvent(makeMessage("/b"));
+    renderer.animationFrame();
+
+    expect(handler).not.toHaveBeenCalled();
+    renderer.dispose();
+  });
+
+  it("keeps pending synchronized messages when unrelated visual config changes", () => {
+    const renderer = new Renderer({ ...defaultRendererProps, canvas });
+    const handler = jest.fn();
+    renderer.schemaSubscriptions.set("test.Message", [{ handler }]);
+    renderer.setSynchronizedTopics(new Set(["/a", "/b"]));
+    const makeMessage = (topic: string): MessageEvent => ({
+      topic,
+      receiveTime: fromNanoSec(1n),
+      schemaName: "test.Message",
+      message: { header: { stamp: fromNanoSec(1n) } },
+      sizeInBytes: 0,
+    });
+    renderer.addMessageEvent(makeMessage("/a"));
+
+    renderer.updateConfig((draft) => {
+      draft.cameraState.distance += 1;
+      draft.scene.backgroundColor = "#ffffff";
+    });
+    renderer.setSynchronizedTopics(new Set(["/a", "/b"]));
+    renderer.addMessageEvent(makeMessage("/b"));
+    renderer.animationFrame();
+
+    expect(handler.mock.calls.map(([event]: [MessageEvent]) => event.topic)).toEqual(["/a", "/b"]);
+    renderer.dispose();
+  });
+
+  it("clears pending synchronized messages when topic synchronization config changes", () => {
+    const renderer = new Renderer({ ...defaultRendererProps, canvas });
+    const handler = jest.fn();
+    renderer.schemaSubscriptions.set("test.Message", [{ handler }]);
+    renderer.setSynchronizedTopics(new Set(["/a", "/b"]));
+    const makeMessage = (topic: string): MessageEvent => ({
+      topic,
+      receiveTime: fromNanoSec(1n),
+      schemaName: "test.Message",
+      message: { header: { stamp: fromNanoSec(1n) } },
+      sizeInBytes: 0,
+    });
+    renderer.addMessageEvent(makeMessage("/a"));
+
+    renderer.updateConfig((draft) => {
+      draft.topics["/a"] = { ...draft.topics["/a"], visible: false };
+    });
+    renderer.addMessageEvent(makeMessage("/b"));
+    renderer.animationFrame();
+
+    expect(handler).not.toHaveBeenCalled();
     renderer.dispose();
   });
 

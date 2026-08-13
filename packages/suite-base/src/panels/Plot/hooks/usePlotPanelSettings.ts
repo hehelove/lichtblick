@@ -45,6 +45,18 @@ export function handleUpdateAction({ draft, path, value }: HandleUpdateAction): 
     draft.showLegend = true;
   } else if (_.isEqual(path, ["xAxis", "xAxisPath"])) {
     _.set(draft, ["xAxisPath", "value"], value);
+  } else if (path[0] === "yAxisRight") {
+    // Secondary Y-axis fields map directly to top-level config keys
+    const fieldMap: Record<string, string> = {
+      yAxisLabelRight: "yAxisLabelRight",
+      showYAxisLabelsRight: "showYAxisLabelsRight",
+      minYValueRight: "minYValueRight",
+      maxYValueRight: "maxYValueRight",
+    };
+    const configKey = fieldMap[path[1]!];
+    if (configKey) {
+      _.set(draft, configKey, value);
+    }
   } else {
     _.set(draft, path.slice(1), value);
 

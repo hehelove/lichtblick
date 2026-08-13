@@ -21,13 +21,16 @@ import {
 } from "./IDatasetsBuilder";
 import { CurrentFrameSeriesItem } from "./types";
 import { buildViewportDatasets, lastMatchingTopic, setSeries } from "./utils";
-import { MATH_FUNCTIONS } from "../constants";
 import { getChartValue, isChartValue } from "../utils/datum";
+import { DynamicSeriesResolver, isDynamicSeries } from "../utils/dynamicSeries";
+import { getMathFunction } from "../utils/mathFunctions";
 
 export class IndexDatasetsBuilder implements IDatasetsBuilder {
   #seriesByKey = new Map<SeriesConfigKey, CurrentFrameSeriesItem>();
 
   #range?: Bounds1D;
+  readonly #dynamicResolver = new DynamicSeriesResolver();
+  #parents: Immutable<SeriesItem[]> = [];
 
   public handlePlayerState(state: Immutable<PlayerState>): HandlePlayerStateResult | undefined {
     const activeData = state.activeData;
@@ -48,7 +51,7 @@ export class IndexDatasetsBuilder implements IDatasetsBuilder {
     const range: Bounds1D = { min: 0, max: 0 };
     let datasetsChanged = false;
     for (const series of this.#seriesByKey.values()) {
-      const mathFn = series.parsed.modifier ? MATH_FUNCTIONS[series.parsed.modifier] : undefined;
+      const mathFn = getMathFunction(series.parsed.modifier);
 
       const msgEvent = lastMatchingTopic(msgEvents, series.parsed.topicName);
       if (!msgEvent) {
@@ -61,23 +64,64 @@ export class IndexDatasetsBuilder implements IDatasetsBuilder {
 
       const items = simpleGetMessagePathDataItems(msgEvent, series.parsed);
       const pathItems = filterMap(items, (item, idx) => {
+        if (mathFn) {
+          const mathModified = mathFn(item);
+          return {
+            x: idx,
+            y: mathModified,
+            receiveTime: msgEvent.receiveTime,
+            value: mathModified,
+          };
+        }
+
         if (!isChartValue(item)) {
           return;
         }
 
         const chartValue = getChartValue(item);
-        const mathModifiedValue =
-          mathFn && chartValue != undefined ? mathFn(chartValue) : undefined;
         return {
           x: idx,
-          y: chartValue == undefined ? NaN : (mathModifiedValue ?? chartValue),
+          y: chartValue ?? NaN,
           receiveTime: msgEvent.receiveTime,
-          value: mathModifiedValue ?? item,
+          value: item,
         };
       });
 
       series.dataset.data = pathItems;
       range.max = Math.max(range.max, series.dataset.data.length - 1);
+    }
+    // Dynamic parents are not present in #seriesByKey until their labels are discovered.
+    for (const parent of this.#parents) {
+      const msgEvent = lastMatchingTopic(msgEvents, parent.parsed.topicName);
+      if (!msgEvent) {
+        continue;
+      }
+      const values = new Map<string, ReturnType<DynamicSeriesResolver["resolve"]>[number]>();
+      for (const item of simpleGetMessagePathDataItems(msgEvent, parent.parsed)) {
+        for (const value of this.#dynamicResolver.resolve(parent, item)) {
+          values.set(value.identity, value);
+        }
+      }
+      if (!isDynamicSeries(parent) && values.size === 0) {
+        continue;
+      }
+      this.#seriesByKey = setSeries(this.#seriesByKey, this.#dynamicResolver.getSeries());
+      for (const child of this.#dynamicResolver.getChildren(parent.key)) {
+        const series = this.#seriesByKey.get(child.key)!;
+        const value = values.get(child.compositeKey!);
+        series.dataset.data = value
+          ? [
+              {
+                x: value.sourceIndex,
+                y: value.value,
+                value: value.value,
+                receiveTime: msgEvent.receiveTime,
+              },
+            ]
+          : [];
+        range.max = Math.max(range.max, value?.sourceIndex ?? 0);
+      }
+      datasetsChanged = true;
     }
 
     this.#range = range;
@@ -88,7 +132,18 @@ export class IndexDatasetsBuilder implements IDatasetsBuilder {
   }
 
   public setSeries(series: Immutable<SeriesItem[]>): void {
-    this.#seriesByKey = setSeries(this.#seriesByKey, series);
+    this.#parents = series;
+    this.#dynamicResolver.setSeries(series);
+    this.#seriesByKey = setSeries(this.#seriesByKey, this.#dynamicResolver.getSeries());
+  }
+
+  public setDynamicSeriesEnabled(identity: string, options: { enabled: boolean }): void {
+    this.#dynamicResolver.setEnabled(identity, options);
+    this.#seriesByKey = setSeries(this.#seriesByKey, this.#dynamicResolver.getSeries());
+  }
+
+  public getDynamicSeries(): Immutable<SeriesItem[]> {
+    return this.#dynamicResolver.getSeries().filter((item) => item.compositeKey != undefined);
   }
 
   // We don't use the viewport because we do not do any downsampling on the assumption that

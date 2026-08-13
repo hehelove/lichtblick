@@ -12,6 +12,7 @@ import * as THREE from "three";
 
 import { Asset } from "@lichtblick/suite-base/components/PanelExtensionAdapter";
 import { Renderer } from "@lichtblick/suite-base/panels/ThreeDeeRender/Renderer";
+import { SceneExtension } from "@lichtblick/suite-base/panels/ThreeDeeRender/SceneExtension";
 import { DEFAULT_SCENE_EXTENSION_CONFIG } from "@lichtblick/suite-base/panels/ThreeDeeRender/SceneExtensionConfig";
 import {
   DEFAULT_CAMERA_STATE,
@@ -20,7 +21,14 @@ import {
 import { DEFAULT_PUBLISH_SETTINGS } from "@lichtblick/suite-base/panels/ThreeDeeRender/renderables/PublishSettings";
 
 import { RendererConfig } from "../IRenderer";
+import { SettingsTreeEntry } from "../SettingsManager";
 import { DEFAULT_LABEL_SCALE_FACTOR, SceneSettings } from "./SceneSettings";
+
+class TopicSettingsExtension extends SceneExtension {
+  public override settingsNodes(): SettingsTreeEntry[] {
+    return [{ path: ["topics", "/topic"], node: { fields: {} } }];
+  }
+}
 
 // --- OrbitControls mock ---
 
@@ -204,6 +212,30 @@ describe("SceneSettings — settingsNodes", () => {
     const field = entry?.node.fields?.mainLightMode;
 
     expect(field).toMatchObject({ input: "select", value: "fixed" });
+    renderer.dispose();
+  });
+
+  it("includes the global Sync timestamps setting", () => {
+    const renderer = makeRenderer();
+    const sceneSettings = new SceneSettings(renderer);
+
+    const [entry] = sceneSettings.settingsNodes();
+
+    expect(entry?.node.fields?.topicsSynchronize).toMatchObject({
+      label: "Sync timestamps",
+      input: "boolean",
+      value: false,
+    });
+    renderer.dispose();
+  });
+
+  it("uses the translated Sync label for per-topic synchronization", () => {
+    const renderer = makeRenderer();
+    const extension = new TopicSettingsExtension("foxglove.Markers", renderer);
+
+    const [entry] = extension.settingsNodesWithTopicSync();
+
+    expect(entry?.node.fields?.synchronize?.label).toBe("Sync");
     renderer.dispose();
   });
 

@@ -8,7 +8,6 @@
 import { MessageEvent } from "@lichtblick/suite";
 import GlobalVariableBuilder from "@lichtblick/suite-base/testing/builders/GlobalVariableBuilder";
 import MessageEventBuilder from "@lichtblick/suite-base/testing/builders/MessageEventBuilder";
-
 import { InstalledMessageConverter } from "@lichtblick/suite-base/types/messageConverters";
 
 import {
@@ -370,7 +369,7 @@ describe("runTopicConverters", () => {
     const create = jest.fn(() => inner);
     const conv = makeTopicConverter({ create });
     const { byInput } = collateTopicConverters([conv]);
-    const fnCache = new Map();
+    const fnCache: Parameters<typeof runTopicConverters>[2] = new Map();
 
     runTopicConverters(inputEvent, byInput, fnCache, []);
     runTopicConverters(inputEvent, byInput, fnCache, []);

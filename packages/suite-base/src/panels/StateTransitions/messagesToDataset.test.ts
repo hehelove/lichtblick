@@ -15,6 +15,7 @@ import {
   createLabel,
   baseColors,
   messagesToDataset,
+  messagesToDynamicDatasets,
 } from "./messagesToDataset";
 import { MessageDatasetArgs, StateTransitionPath } from "./types";
 
@@ -495,5 +496,126 @@ describe("messagesToDataset", () => {
     });
 
     expect(result.data.length).toBe(2);
+  });
+
+  it("selects and compresses one dynamic label independently", () => {
+    const firstEvent = { ...messageEvent, receiveTime: { sec: 1, nsec: 0 } };
+    const secondEvent = { ...messageEvent, receiveTime: { sec: 2, nsec: 0 } };
+    const blocks: MessageAndData[][] = [
+      [
+        {
+          messageEvent: firstEvent,
+          queriedData: [
+            {
+              path: queriedDataPath,
+              value: [
+                { label: "left", value: 1 },
+                { label: "right", value: 9 },
+              ],
+            },
+          ],
+        },
+        {
+          messageEvent: secondEvent,
+          queriedData: [
+            {
+              path: queriedDataPath,
+              value: [
+                { label: "right", value: 10 },
+                { label: "left", value: 1 },
+              ],
+            },
+          ],
+        },
+      ],
+    ];
+
+    const result = messagesToDataset({
+      ...args,
+      blocks,
+      path: {
+        ...args.path,
+        timestampMethod: "receiveTime",
+        dynamicLabelField: "label",
+        dynamicValueField: "value",
+      },
+      dynamicSeries: { identity: "string:left", label: "left" },
+    });
+
+    expect(result.label).toBe(`${args.path.label} · left`);
+    expect(result.data).toHaveLength(2);
+    expect(result.data.map((datum) => datum?.value)).toEqual([1, 1]);
+  });
+
+  it("creates a gap when a dynamic label is missing and restarts its state", () => {
+    const events = [1, 2, 3].map((sec) => ({
+      ...messageEvent,
+      receiveTime: { sec, nsec: 0 },
+    }));
+    const values = [
+      [{ label: "left", value: "on" }],
+      [{ label: "right", value: "off" }],
+      [{ label: "left", value: "on" }],
+    ];
+    const blocks: MessageAndData[][] = [
+      events.map((event, index) => ({
+        messageEvent: event,
+        queriedData: [{ path: queriedDataPath, value: values[index] }],
+      })),
+    ];
+
+    const result = messagesToDataset({
+      ...args,
+      blocks,
+      path: {
+        ...args.path,
+        timestampMethod: "receiveTime",
+        dynamicLabelField: "label",
+        dynamicValueField: "value",
+      },
+      dynamicSeries: { identity: "string:left", label: "left" },
+    });
+
+    expect(result.data.map((datum) => datum?.value)).toEqual(["on", "on", undefined, "on"]);
+    expect(result.data[3]?.label).toBe("on");
+  });
+
+  it("builds many default-field series in stable order with independent compression and gaps", () => {
+    const series = Array.from({ length: 100 }, (_, index) => ({
+      identity: `string:label-${index}`,
+      label: `label-${index}`,
+    }));
+    const valuesAt = (sec: number) =>
+      series
+        .filter((_, index) => !(sec === 2 && index === 50))
+        .map(({ label }) => ({ label, value: label === "label-99" ? sec : "steady" }));
+    const blocks: MessageAndData[][] = [
+      [1, 2, 3].map((sec) => ({
+        messageEvent: { ...messageEvent, receiveTime: { sec, nsec: 0 } },
+        queriedData: [{ path: queriedDataPath, value: valuesAt(sec) }],
+      })),
+    ];
+
+    const result = messagesToDynamicDatasets({
+      ...args,
+      blocks,
+      path: { ...args.path, timestampMethod: "receiveTime" },
+      dynamicSeries: series,
+      yValues: series.map((_, index) => -(index + 1) * 9),
+    });
+
+    expect(result).toHaveLength(100);
+    expect(result.map(({ label }) => label)).toEqual(
+      series.map(({ label }) => `${args.path.label} · ${label}`),
+    );
+    expect(result[0]?.data.map((datum) => datum?.value)).toEqual(["steady", "steady"]);
+    expect(result[50]?.data.map((datum) => datum?.value)).toEqual([
+      "steady",
+      "steady",
+      undefined,
+      "steady",
+    ]);
+    expect(result[99]?.data.map((datum) => datum?.value)).toEqual([1, 2, 3]);
+    expect(result[99]?.data[0]?.y).toBe(-900);
   });
 });
