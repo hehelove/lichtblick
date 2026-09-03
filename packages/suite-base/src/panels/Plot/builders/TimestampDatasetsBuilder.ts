@@ -28,7 +28,7 @@ import type {
   UpdateDataAction,
 } from "./TimestampDatasetsBuilderImpl";
 import { buildCurrentSeriesActions, buildFullSeriesActions } from "./utils";
-import { getChartValue, isChartValue } from "../utils/datum";
+import { resolveChartDatum } from "../utils/datum";
 import { DynamicSeriesResolver, isDynamicSeries } from "../utils/dynamicSeries";
 import { getMathFunction, MathFunction } from "../utils/mathFunctions";
 
@@ -269,13 +269,26 @@ function readMessagePathItems(
 
     const items = simpleGetMessagePathDataItems(event, path);
     for (const item of items) {
+      const headerStamp = getTimestampForMessage(event.message);
+      const timestamp = timestampMethod === "receiveTime" ? event.receiveTime : headerStamp;
+      if (!timestamp) {
+        continue;
+      }
+
+      const xValue = toSec(subtractTime(timestamp, startTime));
+      // eslint-disable-next-line @lichtblick/strict-equality
+      if (item === null) {
+        out.push({
+          x: xValue,
+          y: Number.NaN,
+          receiveTime: event.receiveTime,
+          headerStamp,
+          value: null,
+        });
+        continue;
+      }
+
       if (mathFunction) {
-        const headerStamp = getTimestampForMessage(event.message);
-        const timestamp = timestampMethod === "receiveTime" ? event.receiveTime : headerStamp;
-        if (!timestamp) {
-          continue;
-        }
-        const xValue = toSec(subtractTime(timestamp, startTime));
         const mathModified = mathFunction(item);
         out.push({
           x: xValue,
@@ -287,27 +300,16 @@ function readMessagePathItems(
         continue;
       }
 
-      if (!isChartValue(item)) {
+      const datum = resolveChartDatum(item);
+      if (!datum) {
         continue;
       }
-      const chartValue = getChartValue(item);
-      if (chartValue == undefined) {
-        continue;
-      }
-
-      const headerStamp = getTimestampForMessage(event.message);
-      const timestamp = timestampMethod === "receiveTime" ? event.receiveTime : headerStamp;
-      if (!timestamp) {
-        continue;
-      }
-
-      const xValue = toSec(subtractTime(timestamp, startTime));
       out.push({
         x: xValue,
-        y: chartValue,
+        y: datum.y,
         receiveTime: event.receiveTime,
         headerStamp,
-        value: item,
+        value: datum.value,
       });
     }
   }

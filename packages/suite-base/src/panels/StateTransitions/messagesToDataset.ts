@@ -70,12 +70,27 @@ export function messagesToDataset(args: MessageDatasetArgs): ChartDataset {
         dynamicSeries == undefined
           ? queriedData
           : extractDynamicData(queriedData.value, path, dynamicSeries.identity);
-      if (selectedData == undefined || !isValidValue(selectedData.value)) {
+      if (
+        selectedData == undefined ||
+        // eslint-disable-next-line @lichtblick/strict-equality
+        selectedData.value === null ||
+        !isValidValue(selectedData.value)
+      ) {
         if (dynamicSeries != undefined && lastValue != undefined) {
           if (lastValidDatum != undefined) {
             dataset.data.push({ ...lastValidDatum, x, label: undefined });
           }
           dataset.data.push(undefined);
+          lastValue = undefined;
+          lastDatum = undefined;
+          lastValidDatum = undefined;
+        }
+        // eslint-disable-next-line @lichtblick/strict-equality
+        if (selectedData?.value === null) {
+          if (lastDatum != undefined) {
+            dataset.data.push(lastDatum);
+          }
+          dataset.data.push({ x, y: Number.NaN });
           lastValue = undefined;
           lastDatum = undefined;
           lastValidDatum = undefined;
@@ -318,6 +333,7 @@ export function extractQueriedData(itemByPath: MessageAndData): MessagePathDataI
 
 export function isValidValue(value: unknown): value is number | string | bigint | boolean {
   // Check if the type of `value` is one of the desired types and that it's not `NaN`
+  // null is handled separately by the caller as a gap marker, not a valid state value.
   return (
     (typeof value === "number" && !Number.isNaN(value)) ||
     typeof value === "string" ||

@@ -22,7 +22,7 @@ import {
 } from "./IDatasetsBuilder";
 import { CurrentFrameSeriesItem } from "./types";
 import { buildViewportDatasets, lastMatchingTopic, setSeries } from "./utils";
-import { getChartValue, isChartValue } from "../utils/datum";
+import { getChartValue, isChartValue, resolveChartDatum } from "../utils/datum";
 import { DynamicSeriesResolver, isDynamicSeries } from "../utils/dynamicSeries";
 
 /**
@@ -96,6 +96,16 @@ export class CurrentCustomDatasetsBuilder implements IDatasetsBuilder {
       datasetsChanged ||= items.length > 0;
 
       const pathItems = filterMap(items, (item, idx) => {
+        // eslint-disable-next-line @lichtblick/strict-equality
+        if (item === null) {
+          return {
+            x: this.#xValues[idx] ?? NaN,
+            y: Number.NaN,
+            receiveTime: msgEvent.receiveTime,
+            value: null,
+          };
+        }
+
         if (mathFn) {
           const mathModified = mathFn(item);
           return {
@@ -106,16 +116,15 @@ export class CurrentCustomDatasetsBuilder implements IDatasetsBuilder {
           };
         }
 
-        if (!isChartValue(item)) {
+        const datum = resolveChartDatum(item);
+        if (!datum) {
           return;
         }
-
-        const chartValue = getChartValue(item);
         return {
           x: this.#xValues[idx] ?? NaN,
-          y: chartValue ?? NaN,
+          y: datum.y,
           receiveTime: msgEvent.receiveTime,
-          value: item,
+          value: datum.value,
         };
       });
 

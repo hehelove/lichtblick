@@ -21,7 +21,7 @@ import {
 } from "./IDatasetsBuilder";
 import { CurrentFrameSeriesItem } from "./types";
 import { buildViewportDatasets, lastMatchingTopic, setSeries } from "./utils";
-import { getChartValue, isChartValue } from "../utils/datum";
+import { resolveChartDatum } from "../utils/datum";
 import { DynamicSeriesResolver, isDynamicSeries } from "../utils/dynamicSeries";
 import { getMathFunction } from "../utils/mathFunctions";
 
@@ -64,6 +64,11 @@ export class IndexDatasetsBuilder implements IDatasetsBuilder {
 
       const items = simpleGetMessagePathDataItems(msgEvent, series.parsed);
       const pathItems = filterMap(items, (item, idx) => {
+        // eslint-disable-next-line @lichtblick/strict-equality
+        if (item === null) {
+          return { x: idx, y: Number.NaN, receiveTime: msgEvent.receiveTime, value: null };
+        }
+
         if (mathFn) {
           const mathModified = mathFn(item);
           return {
@@ -74,17 +79,11 @@ export class IndexDatasetsBuilder implements IDatasetsBuilder {
           };
         }
 
-        if (!isChartValue(item)) {
+        const datum = resolveChartDatum(item);
+        if (!datum) {
           return;
         }
-
-        const chartValue = getChartValue(item);
-        return {
-          x: idx,
-          y: chartValue ?? NaN,
-          receiveTime: msgEvent.receiveTime,
-          value: item,
-        };
+        return { x: idx, y: datum.y, receiveTime: msgEvent.receiveTime, value: datum.value };
       });
 
       series.dataset.data = pathItems;

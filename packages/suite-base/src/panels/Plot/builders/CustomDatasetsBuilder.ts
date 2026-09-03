@@ -28,7 +28,7 @@ import {
   Viewport,
 } from "./IDatasetsBuilder";
 import { buildCurrentSeriesActions, buildFullSeriesActions } from "./utils";
-import { getChartValue, isChartValue } from "../utils/datum";
+import { resolveChartDatum } from "../utils/datum";
 import { DynamicSeriesResolver, isDynamicSeries } from "../utils/dynamicSeries";
 import { getMathFunction, MathFunction } from "../utils/mathFunctions";
 
@@ -329,6 +329,12 @@ function readMessagePathItems(
 
     const items = simpleGetMessagePathDataItems(event, path);
     for (const item of items) {
+      // eslint-disable-next-line @lichtblick/strict-equality
+      if (item === null) {
+        out.push({ value: Number.NaN, originalValue: null, receiveTime: event.receiveTime });
+        continue;
+      }
+
       if (mathFunction) {
         const mathModified = mathFunction(item);
         out.push({
@@ -339,19 +345,12 @@ function readMessagePathItems(
         continue;
       }
 
-      if (!isChartValue(item)) {
-        continue;
-      }
-      const chartValue = getChartValue(item);
-      if (chartValue == undefined) {
+      const datum = resolveChartDatum(item);
+      if (!datum) {
         continue;
       }
 
-      out.push({
-        value: chartValue,
-        originalValue: item,
-        receiveTime: event.receiveTime,
-      });
+      out.push({ value: datum.y, originalValue: datum.value, receiveTime: event.receiveTime });
     }
   }
 
