@@ -9,24 +9,20 @@ import { filterMap } from "@lichtblick/den/collection";
 import Log from "@lichtblick/log";
 import { toRFC3339String } from "@lichtblick/rostime";
 import { MessageEvent } from "@lichtblick/suite";
-import { GlobalVariables } from "@lichtblick/suite-base/hooks/useGlobalVariables";
 import { BlockLoader } from "@lichtblick/suite-base/players/IterablePlayer/BlockLoader";
-import {
-  IDeserializedIterableSource,
-  IteratorResult,
-} from "@lichtblick/suite-base/players/IterablePlayer/IIterableSource";
+import { IDeserializedIterableSource } from "@lichtblick/suite-base/players/IterablePlayer/IIterableSource";
 import PlayerAlertManager from "@lichtblick/suite-base/players/PlayerAlertManager";
 import { PLAYER_CAPABILITIES } from "@lichtblick/suite-base/players/constants";
 import {
-  AdvertiseOptions,
   Player,
   PlayerPresence,
-  PlayerState,
   Progress,
-  PublishPayload,
   SubscribePayload,
 } from "@lichtblick/suite-base/players/types";
 import delay from "@lichtblick/suite-base/util/delay";
+
+import { BenchmarkStats } from "../BenchmarkStats";
+import { BenchmarkPlayerBase } from "./BenchmarkPlayerBase";
 
 const log = Log.getLogger(__filename);
 
@@ -35,53 +31,25 @@ const MIN_MEM_CACHE_BLOCK_SIZE_NS = 0.1e9;
 const MAX_BLOCKS = 100;
 const CAPABILITIES: string[] = [PLAYER_CAPABILITIES.playbackControl];
 
-class BenchmarkPlayer implements Player {
+class BenchmarkPlayer extends BenchmarkPlayerBase implements Player {
   readonly #source: IDeserializedIterableSource;
   readonly #name: string;
-  #listener?: (state: PlayerState) => Promise<void>;
   #subscriptions: SubscribePayload[] = [];
   #blockLoader?: BlockLoader;
   readonly #alertManager = new PlayerAlertManager();
 
   public constructor(name: string, source: IDeserializedIterableSource) {
+    super();
     this.#name = name;
     this.#source = source;
   }
 
-  public getBatchIterator(
-    _topic: string,
-  ): AsyncIterableIterator<Readonly<IteratorResult>> | undefined {
-    return undefined;
-  }
-
-  public setListener(listener: (state: PlayerState) => Promise<void>): void {
-    this.#listener = listener;
-    void this.#run();
-  }
-  public close(): void {
-    //throw new Error("Method not implemented.");
-  }
-  public setSubscriptions(subscriptions: SubscribePayload[]): void {
+  public override setSubscriptions(subscriptions: SubscribePayload[]): void {
     this.#subscriptions = subscriptions;
   }
-  public setPublishers(_publishers: AdvertiseOptions[]): void {
-    //throw new Error("Method not implemented.");
-  }
-  public setParameter(_key: string, _value: unknown): void {
-    throw new Error("Method not implemented.");
-  }
-  public publish(_request: PublishPayload): void {
-    throw new Error("Method not implemented.");
-  }
-  public async callService(_service: string, _request: unknown): Promise<unknown> {
-    throw new Error("Method not implemented.");
-  }
-  public setGlobalVariables(_globalVariables: GlobalVariables): void {
-    throw new Error("Method not implemented.");
-  }
 
-  async #run() {
-    const listener = this.#listener;
+  protected async run(): Promise<void> {
+    const listener = this.listener;
     if (!listener) {
       throw new Error("Invariant: listener is not set");
     }
@@ -173,7 +141,6 @@ class BenchmarkPlayer implements Player {
     this.#blockLoader?.setTopics(topicsForPreload);
 
     const msgEvents: MessageEvent[] = [];
-    const frameMs: number[] = [];
 
     // Load all messages into memory
     for await (const item of iterator) {
@@ -184,7 +151,6 @@ class BenchmarkPlayer implements Player {
       if (item.type === "message-event") {
         msgEvents.push(item.msgEvent);
       }
-      frameMs.push(0);
     }
     let progressForListener: Progress = {};
 
@@ -209,8 +175,7 @@ class BenchmarkPlayer implements Player {
     performance.mark("message-emit-start");
 
     let totalBytesReceived = 0;
-    for (let i = 0; i < msgEvents.length; i++) {
-      const msgEvent = msgEvents[i]!;
+    for (const msgEvent of msgEvents) {
       totalBytesReceived += msgEvent.sizeInBytes;
       const startFrame = performance.now();
       await listener({
@@ -235,22 +200,11 @@ class BenchmarkPlayer implements Player {
         },
       });
       const endFrame = performance.now();
-      frameMs[i] = endFrame - startFrame;
+      BenchmarkStats.Instance().recordFrameTime(endFrame - startFrame);
     }
 
     performance.mark("message-emit-end");
     performance.measure("message-emit", "message-emit-start", "message-emit-end");
-
-    // Discard the first and last frames
-    const filteredFrameMs = frameMs.slice(1, -1);
-
-    const frameMsStats = getFrameStats(filteredFrameMs);
-
-    log.info(
-      `Frame time (filtered) average: ${frameMsStats.avgFrameMs}, median: ${frameMsStats.medianFrameMs}, P90: ${frameMsStats.p90FrameMs}`,
-    );
-
-    console.log(frameMs);
 
     const tries = 20;
     const steps = 10;
@@ -300,20 +254,6 @@ class BenchmarkPlayer implements Player {
         .join("ms, ")}ms`,
     );
   }
-}
-
-function getFrameStats(frames: number[]) {
-  const totalFrameMs = frames.reduce((a, b) => a + b, 0);
-  const avgFrameMs = totalFrameMs / frames.length;
-
-  const sortedFrameMs = frames.sort();
-  const medianFrameMs = sortedFrameMs[Math.floor(sortedFrameMs.length * 0.5)]!;
-  const p90FrameMs = sortedFrameMs[Math.floor(sortedFrameMs.length * 0.9)]!;
-  return {
-    avgFrameMs,
-    medianFrameMs,
-    p90FrameMs,
-  };
 }
 
 export { BenchmarkPlayer };

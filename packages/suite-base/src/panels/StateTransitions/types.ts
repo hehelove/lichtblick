@@ -89,4 +89,9 @@ export type DynamicMessageDatasetsArgs = Omit<MessageDatasetArgs, "dynamicSeries
 
 export type ValidQueriedDataValue = number | string | boolean | bigint;
 
+export type ValueAtTime = {
+  value: ValidQueriedDataValue;
+  constantName: string | undefined;
+};
+
 export type ImmutableDataset = Immutable<(MessageAndData[] | undefined)[]>;

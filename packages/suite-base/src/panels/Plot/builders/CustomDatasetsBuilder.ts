@@ -28,7 +28,7 @@ import {
   Viewport,
 } from "./IDatasetsBuilder";
 import { buildCurrentSeriesActions, buildFullSeriesActions } from "./utils";
-import { getChartValue, isChartValue } from "../utils/datum";
+import { resolveChartDatum } from "../utils/datum";
 import { DynamicSeriesResolver, isDynamicSeries } from "../utils/dynamicSeries";
 import { getMathFunction, MathFunction } from "../utils/mathFunctions";
 
@@ -329,27 +329,14 @@ function readMessagePathItems(
 
     const items = simpleGetMessagePathDataItems(event, path);
     for (const item of items) {
-      if (mathFunction) {
-        const mathModified = mathFunction(item);
-        out.push({
-          value: mathModified,
-          originalValue: mathModified,
-          receiveTime: event.receiveTime,
-        });
-        continue;
-      }
-
-      if (!isChartValue(item)) {
-        continue;
-      }
-      const chartValue = getChartValue(item);
-      if (chartValue == undefined) {
+      const datum = resolveChartDatum(item, mathFunction);
+      if (!datum) {
         continue;
       }
 
       out.push({
-        value: chartValue,
-        originalValue: item,
+        value: datum.y,
+        originalValue: datum.value,
         receiveTime: event.receiveTime,
       });
     }

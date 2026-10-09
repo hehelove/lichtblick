@@ -402,6 +402,26 @@ describe("messagesToDataset", () => {
     expect(result.data.length).toBe(0);
   });
 
+  it("should treat a null value as a gap and emit a NaN datum", () => {
+    const blocks: MessageAndData[][] = [
+      [
+        {
+          messageEvent,
+          queriedData: [{ value: null, path: queriedDataPath }],
+        },
+      ],
+    ];
+    const argsDataset: MessageDatasetArgs = {
+      ...args,
+      path: { ...args.path, timestampMethod: "receiveTime" },
+      blocks,
+    };
+
+    const result = messagesToDataset(argsDataset);
+
+    expect(result.data).toEqual([{ x: expect.any(Number), y: NaN }]);
+  });
+
   it("should not assign a label to repeated consecutive data points", () => {
     const messageAndData = {
       messageEvent,
@@ -617,5 +637,30 @@ describe("messagesToDataset", () => {
     ]);
     expect(result[99]?.data.map((datum) => datum?.value)).toEqual([1, 2, 3]);
     expect(result[99]?.data[0]?.y).toBe(-900);
+  });
+
+  it("should preserve the pending state before a gap", () => {
+    const repeatedValue = BasicBuilder.number();
+    const messageAndData = {
+      messageEvent,
+      queriedData: [{ value: repeatedValue, path: queriedDataPath }],
+    };
+    const gap = {
+      messageEvent,
+      queriedData: [{ value: null, path: queriedDataPath }],
+    };
+
+    const result = messagesToDataset({
+      ...args,
+      blocks: [[messageAndData, messageAndData, gap]],
+      path: { ...args.path, timestampMethod: "receiveTime" },
+      showPoints: false,
+    });
+
+    expect(result.data).toEqual([
+      expect.objectContaining({ value: repeatedValue }),
+      expect.objectContaining({ value: repeatedValue }),
+      { x: expect.any(Number), y: NaN },
+    ]);
   });
 });

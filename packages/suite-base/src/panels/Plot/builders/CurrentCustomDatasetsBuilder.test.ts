@@ -41,7 +41,9 @@ function buildSeriesItems(
   });
 }
 
-function buildPlayerState(activeDataOverride?: Partial<PlayerStateActiveData>): PlayerState {
+function buildPlayerState(
+  activeDataOverride?: Partial<PlayerStateActiveData>,
+): PlayerState {
   return {
     activeData: {
       messages: [],
@@ -100,9 +102,73 @@ describe("CurrentCustomDatasetsBuilder", () => {
 
     const result = await builder.getViewportDatasets();
     expect(result.datasetsByConfigIndex).toEqual([
-      expect.objectContaining({ label: "a", data: [expect.objectContaining({ x: 10, y: 4 })] }),
-      expect.objectContaining({ label: "b", data: [expect.objectContaining({ x: 20, y: 5 })] }),
+      expect.objectContaining({
+        label: "a",
+        data: [expect.objectContaining({ x: 10, y: 4 })],
+      }),
+      expect.objectContaining({
+        label: "b",
+        data: [expect.objectContaining({ x: 20, y: 5 })],
+      }),
     ]);
+  });
+
+  it("should render a gap by mapping a null value to NaN", async () => {
+    const builder = new CurrentCustomDatasetsBuilder();
+
+    builder.setXPath(parseMessagePath("/foo.val[:]"));
+    builder.setSeries(
+      buildSeriesItems([
+        {
+          enabled: true,
+          timestampMethod: "receiveTime",
+          value: "/bar.val[:]",
+        },
+      ]),
+    );
+
+    builder.handlePlayerState(
+      buildPlayerState({
+        messages: [
+          {
+            topic: "/foo",
+            schemaName: "foo",
+            receiveTime: { sec: 0, nsec: 0 },
+            sizeInBytes: 0,
+            message: {
+              val: [0, 1, 2],
+            },
+          },
+          {
+            topic: "/bar",
+            schemaName: "foo",
+            receiveTime: { sec: 0, nsec: 0 },
+            sizeInBytes: 0,
+            message: {
+              val: [0, null, 2],
+            },
+          },
+        ],
+      }),
+    );
+
+    const result = await builder.getViewportDatasets();
+
+    expect(result).toEqual({
+      pathsWithMismatchedDataLengths: new Set(),
+      datasetsByConfigIndex: [
+        expect.objectContaining({
+          data: [
+            { x: 0, y: 0, value: 0, receiveTime: { sec: 0, nsec: 0 } },
+            { x: 1, y: NaN, value: null, receiveTime: { sec: 0, nsec: 0 } },
+            { x: 2, y: 2, value: 2, receiveTime: { sec: 0, nsec: 0 } },
+          ],
+          showLine: true,
+          pointRadius: 1.2,
+          fill: false,
+        }),
+      ],
+    });
   });
   it("should apply a math function", async () => {
     const builder = new CurrentCustomDatasetsBuilder();
@@ -184,7 +250,9 @@ describe("CurrentCustomDatasetsBuilder", () => {
     );
 
     const result = await builder.getViewportDatasets();
-    expect(result.datasetsByConfigIndex[0]?.data.map(({ x, y }) => ({ x, y }))).toEqual([
+    expect(
+      result.datasetsByConfigIndex[0]?.data.map(({ x, y }) => ({ x, y })),
+    ).toEqual([
       { x: 4, y: 2 },
       { x: 0, y: 1 },
       { x: 6, y: 3 },
@@ -211,7 +279,9 @@ describe("CurrentCustomDatasetsBuilder", () => {
             schemaName: "bar",
             receiveTime: { sec: 0, nsec: 0 },
             sizeInBytes: 0,
-            message: { rotation: { x: 0, y: 0, z: Math.SQRT1_2, w: Math.SQRT1_2 } },
+            message: {
+              rotation: { x: 0, y: 0, z: Math.SQRT1_2, w: Math.SQRT1_2 },
+            },
           },
         ],
       }),
@@ -219,7 +289,11 @@ describe("CurrentCustomDatasetsBuilder", () => {
 
     const result = await builder.getViewportDatasets();
     expect(result.datasetsByConfigIndex[0]?.data[0]).toEqual(
-      expect.objectContaining({ x: 5, y: expect.closeTo(90), value: expect.closeTo(90) }),
+      expect.objectContaining({
+        x: 5,
+        y: expect.closeTo(90),
+        value: expect.closeTo(90),
+      }),
     );
   });
 

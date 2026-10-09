@@ -41,7 +41,9 @@ function buildSeriesItems(
   });
 }
 
-function buildPlayerState(activeDataOverride?: Partial<PlayerStateActiveData>): PlayerState {
+function buildPlayerState(
+  activeDataOverride?: Partial<PlayerStateActiveData>,
+): PlayerState {
   return {
     activeData: {
       messages: [],
@@ -92,8 +94,14 @@ describe("IndexDatasetsBuilder", () => {
 
     const result = await builder.getViewportDatasets();
     expect(result.datasetsByConfigIndex).toEqual([
-      expect.objectContaining({ label: "a", data: [expect.objectContaining({ x: 0, y: 4 })] }),
-      expect.objectContaining({ label: "b", data: [expect.objectContaining({ x: 1, y: 5 })] }),
+      expect.objectContaining({
+        label: "a",
+        data: [expect.objectContaining({ x: 0, y: 4 })],
+      }),
+      expect.objectContaining({
+        label: "b",
+        data: [expect.objectContaining({ x: 1, y: 5 })],
+      }),
     ]);
   });
 
@@ -120,7 +128,10 @@ describe("IndexDatasetsBuilder", () => {
     );
 
     builder.setSeries(
-      buildSeriesItems([{ value: "/bar.values" }, { value: "/bar.regular", key: "regular" }]),
+      buildSeriesItems([
+        { value: "/bar.values" },
+        { value: "/bar.regular", key: "regular" },
+      ]),
     );
 
     const result = await builder.getViewportDatasets();
@@ -129,6 +140,54 @@ describe("IndexDatasetsBuilder", () => {
       expect.objectContaining({ label: undefined }),
       expect.objectContaining({ label: "b" }),
     ]);
+  });
+
+  it("should render a gap by mapping a null value to NaN", async () => {
+    const builder = new IndexDatasetsBuilder();
+
+    builder.setSeries(
+      buildSeriesItems([
+        {
+          enabled: true,
+          timestampMethod: "receiveTime",
+          value: "/bar.val[:]",
+        },
+      ]),
+    );
+
+    builder.handlePlayerState(
+      buildPlayerState({
+        messages: [
+          {
+            topic: "/bar",
+            schemaName: "foo",
+            receiveTime: { sec: 0, nsec: 0 },
+            sizeInBytes: 0,
+            message: {
+              val: [1, null, 3],
+            },
+          },
+        ],
+      }),
+    );
+
+    const result = await builder.getViewportDatasets();
+
+    expect(result).toEqual({
+      pathsWithMismatchedDataLengths: new Set(),
+      datasetsByConfigIndex: [
+        expect.objectContaining({
+          data: [
+            { x: 0, y: 1, value: 1, receiveTime: { sec: 0, nsec: 0 } },
+            { x: 1, y: NaN, value: null, receiveTime: { sec: 0, nsec: 0 } },
+            { x: 2, y: 3, value: 3, receiveTime: { sec: 0, nsec: 0 } },
+          ],
+          showLine: true,
+          pointRadius: 1.2,
+          fill: false,
+        }),
+      ],
+    });
   });
   it("should produce a dataset", async () => {
     const builder = new IndexDatasetsBuilder();
@@ -277,7 +336,9 @@ describe("IndexDatasetsBuilder", () => {
     );
 
     const result = await builder.getViewportDatasets();
-    expect(result.datasetsByConfigIndex[0]?.data.map(({ y }) => y)).toEqual([2, 1, 3]);
+    expect(result.datasetsByConfigIndex[0]?.data.map(({ y }) => y)).toEqual([
+      2, 1, 3,
+    ]);
   });
 
   it("should apply an object math function", async () => {
@@ -311,7 +372,9 @@ describe("IndexDatasetsBuilder", () => {
   it("drops dynamic children and their data when the field config changes", async () => {
     const builder = new IndexDatasetsBuilder();
     builder.setSeries(
-      buildSeriesItems([{ key: "label-key", value: "/bar.values", dynamicLabelField: "label" }]),
+      buildSeriesItems([
+        { key: "label-key", value: "/bar.values", dynamicLabelField: "label" },
+      ]),
     );
     builder.handlePlayerState(
       buildPlayerState({
@@ -329,7 +392,9 @@ describe("IndexDatasetsBuilder", () => {
     expect(builder.getDynamicSeries()).toHaveLength(1);
 
     builder.setSeries(
-      buildSeriesItems([{ key: "name-key", value: "/bar.values", dynamicLabelField: "name" }]),
+      buildSeriesItems([
+        { key: "name-key", value: "/bar.values", dynamicLabelField: "name" },
+      ]),
     );
 
     expect(builder.getDynamicSeries()).toEqual([]);

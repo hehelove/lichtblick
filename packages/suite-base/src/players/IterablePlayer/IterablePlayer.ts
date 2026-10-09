@@ -443,6 +443,13 @@ export class IterablePlayer implements Player {
     });
   }
 
+  // Reuses #messageRangeSource (already independent of the live playback cursor/state machine,
+  // same source instance used by getBatchIterator) so point-in-time reads never interfere with
+  // seeking/backfilling the live playhead and can safely run concurrently with each other.
+  public async getBackfillMessages(args: GetBackfillMessagesArgs): Promise<MessageEvent[]> {
+    return (await this.#messageRangeSource?.getBackfillMessages(args)) ?? [];
+  }
+
   public setParameter(_key: string, _value: ParameterValue): void {
     throw new Error("Parameter editing is not supported by this data source");
   }
@@ -845,7 +852,9 @@ export class IterablePlayer implements Player {
     this.#messages = messageEvents;
     this.#presence = PlayerPresence.PRESENT;
     this.#queueEmitState();
-    this.#setState("idle");
+    // `startPlayback()` may have been called while still in "initialize"/"start-play" setting `#isPlaying` before we ever reach "idle". Honor it
+    // here instead of always going idle
+    this.#setState(this.#isPlaying ? "play" : "idle");
   }
 
   // Process a seek request. The seek is performed by requesting a getBackfillMessages from the source.

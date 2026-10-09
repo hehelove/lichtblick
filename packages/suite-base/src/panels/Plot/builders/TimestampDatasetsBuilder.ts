@@ -28,7 +28,7 @@ import type {
   UpdateDataAction,
 } from "./TimestampDatasetsBuilderImpl";
 import { buildCurrentSeriesActions, buildFullSeriesActions } from "./utils";
-import { getChartValue, isChartValue } from "../utils/datum";
+import { resolveChartDatum } from "../utils/datum";
 import { DynamicSeriesResolver, isDynamicSeries } from "../utils/dynamicSeries";
 import { getMathFunction, MathFunction } from "../utils/mathFunctions";
 
@@ -269,29 +269,8 @@ function readMessagePathItems(
 
     const items = simpleGetMessagePathDataItems(event, path);
     for (const item of items) {
-      if (mathFunction) {
-        const headerStamp = getTimestampForMessage(event.message);
-        const timestamp = timestampMethod === "receiveTime" ? event.receiveTime : headerStamp;
-        if (!timestamp) {
-          continue;
-        }
-        const xValue = toSec(subtractTime(timestamp, startTime));
-        const mathModified = mathFunction(item);
-        out.push({
-          x: xValue,
-          y: mathModified,
-          receiveTime: event.receiveTime,
-          headerStamp,
-          value: mathModified,
-        });
-        continue;
-      }
-
-      if (!isChartValue(item)) {
-        continue;
-      }
-      const chartValue = getChartValue(item);
-      if (chartValue == undefined) {
+      const datum = resolveChartDatum(item, mathFunction);
+      if (!datum) {
         continue;
       }
 
@@ -304,10 +283,10 @@ function readMessagePathItems(
       const xValue = toSec(subtractTime(timestamp, startTime));
       out.push({
         x: xValue,
-        y: chartValue,
+        y: datum.y,
         receiveTime: event.receiveTime,
         headerStamp,
-        value: item,
+        value: datum.value,
       });
     }
   }
