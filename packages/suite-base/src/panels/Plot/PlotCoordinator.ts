@@ -338,6 +338,7 @@ export class PlotCoordinator extends EventEmitter<PlotCoordinatorEventTypes> {
         lineSize: path.lineSize ?? 1.0,
         timestampMethod: path.timestampMethod,
         showLine: path.showLine ?? true,
+        stepped: path.stepped,
         enabled: path.enabled,
         yAxisID: path.yAxisID,
         dynamicLabelField: path.dynamicLabelField === "" ? undefined : path.dynamicLabelField,

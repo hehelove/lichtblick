@@ -12,7 +12,12 @@ import MessageEventBuilder from "@lichtblick/suite-base/testing/builders/Message
 import { BasicBuilder } from "@lichtblick/test-builders";
 
 import { SeriesConfigKey, SeriesItem } from "./IDatasetsBuilder";
-import { buildCurrentSeriesActions, buildFullSeriesActions, lastMatchingTopic } from "./utils";
+import {
+  buildCurrentSeriesActions,
+  buildDatasetStyle,
+  buildFullSeriesActions,
+  lastMatchingTopic,
+} from "./utils";
 
 function makeSeriesItem({
   key,
@@ -36,6 +41,22 @@ function makeSeriesItem({
     },
   };
 }
+
+describe("buildDatasetStyle", () => {
+  const baseSeriesItem = makeSeriesItem({
+    key: "a" as SeriesConfigKey,
+    value: "/topic_a.field",
+  }).config;
+
+  it("sets stepped from config", () => {
+    expect(buildDatasetStyle({ ...baseSeriesItem, stepped: true })).toMatchObject({
+      stepped: true,
+    });
+    expect(buildDatasetStyle({ ...baseSeriesItem, stepped: undefined })).not.toHaveProperty(
+      "stepped",
+    );
+  });
+});
 
 describe("lastMatchingTopic", () => {
   const matchTopic = BasicBuilder.string();

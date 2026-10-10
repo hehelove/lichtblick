@@ -35,6 +35,7 @@ export function buildDatasetStyle(config: Immutable<SeriesItem>): Omit<Dataset, 
     pointHoverRadius: 3,
     pointBackgroundColor: showLine ? contrastColor : color,
     pointBorderColor: "transparent",
+    ...(config.stepped == undefined ? {} : { stepped: config.stepped }),
   };
 }
 

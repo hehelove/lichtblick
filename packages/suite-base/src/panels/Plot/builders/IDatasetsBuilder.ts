@@ -43,6 +43,8 @@ export type SeriesItem = {
   contrastColor: string;
   timestampMethod: TimestampMethod;
   showLine: boolean;
+  /** When true, render the series with step interpolation instead of smooth lines */
+  stepped?: boolean;
   lineSize: number;
   enabled: boolean;
   yAxisID?: "y" | "y1";

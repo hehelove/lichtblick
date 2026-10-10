@@ -52,6 +52,7 @@ export const plot = {
   showLegend: "Show legend",
   showLine: "Show lines",
   showValues: "Show values",
+  stepped: "Step interpolation",
   syncWithOtherPlots: "Sync with other plots",
   timestamp: "Timestamp",
   toggleDynamicSeries: "Toggle dynamic series",
