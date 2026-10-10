@@ -597,6 +597,200 @@ describe("TimestampDatasetsBuilder", () => {
     });
   });
 
+  it("computes timedelta (x diff in seconds) with NaN for the first datum", async () => {
+    const builder = new TimestampDatasetsBuilder();
+
+    builder.setSeries(
+      buildSeriesItems([
+        {
+          enabled: true,
+          timestampMethod: "receiveTime",
+          value: "/foo.val.@timedelta",
+        },
+      ]),
+    );
+
+    builder.handlePlayerState(
+      buildPlayerState({
+        messages: [
+          {
+            topic: "/foo",
+            schemaName: "foo",
+            receiveTime: { sec: 0, nsec: 0 },
+            sizeInBytes: 0,
+            message: { val: 1 },
+          },
+          {
+            topic: "/foo",
+            schemaName: "foo",
+            receiveTime: { sec: 1, nsec: 500000000 },
+            sizeInBytes: 0,
+            message: { val: 3 },
+          },
+          {
+            topic: "/foo",
+            schemaName: "foo",
+            receiveTime: { sec: 3, nsec: 0 },
+            sizeInBytes: 0,
+            message: { val: 6 },
+          },
+        ],
+      }),
+    );
+
+    await expect(
+      builder.getViewportDatasets({
+        size: { width: 1_000, height: 1_000 },
+        bounds: {},
+      }),
+    ).resolves.toEqual({
+      pathsWithMismatchedDataLengths: new Set(),
+      datasetsByConfigIndex: [
+        expect.objectContaining({
+          // timedelta differences timestamps, not values: the y values are irrelevant
+          // and only the x deltas (0.5s and 1.5s) show up. First datum has no
+          // previous timestamp so it is NaN.
+          data: [
+            { x: 0, y: NaN, value: null },
+            { x: 1.5, y: 1.5, value: 1.5 },
+            { x: 3, y: 1.5, value: 1.5 },
+          ],
+        }),
+      ],
+    });
+  });
+
+  it("resets the timedelta segment after a gap instead of computing across it", async () => {
+    const builder = new TimestampDatasetsBuilder();
+
+    builder.setSeries(
+      buildSeriesItems([
+        {
+          enabled: true,
+          timestampMethod: "receiveTime",
+          value: "/foo.val.@timedelta",
+        },
+      ]),
+    );
+
+    builder.handlePlayerState(
+      buildPlayerState({
+        messages: [
+          {
+            topic: "/foo",
+            schemaName: "foo",
+            receiveTime: { sec: 0, nsec: 0 },
+            sizeInBytes: 0,
+            message: { val: 0 },
+          },
+          {
+            topic: "/foo",
+            schemaName: "foo",
+            receiveTime: { sec: 1, nsec: 0 },
+            sizeInBytes: 0,
+            message: { val: 1 },
+          },
+          {
+            topic: "/foo",
+            schemaName: "foo",
+            receiveTime: { sec: 2, nsec: 0 },
+            sizeInBytes: 0,
+            message: { val: null },
+          },
+          {
+            topic: "/foo",
+            schemaName: "foo",
+            receiveTime: { sec: 3, nsec: 0 },
+            sizeInBytes: 0,
+            message: { val: 5 },
+          },
+          {
+            topic: "/foo",
+            schemaName: "foo",
+            receiveTime: { sec: 4, nsec: 0 },
+            sizeInBytes: 0,
+            message: { val: 7 },
+          },
+        ],
+      }),
+    );
+
+    await expect(
+      builder.getViewportDatasets({
+        size: { width: 1_000, height: 1_000 },
+        bounds: {},
+      }),
+    ).resolves.toEqual({
+      pathsWithMismatchedDataLengths: new Set(),
+      datasetsByConfigIndex: [
+        expect.objectContaining({
+          // The gap datum at t=2 (null value) still has a valid timestamp so its own
+          // timedelta (2-1) is computed, but the segment resets after it: t=3 has no
+          // valid previous datum to diff against and comes out NaN; t=4 resumes.
+          data: [
+            { x: 0, y: NaN, value: null },
+            { x: 1, y: 1, value: 1 },
+            { x: 2, y: 1, value: 1 },
+            { x: 3, y: NaN, value: null },
+            { x: 4, y: 1, value: 1 },
+          ],
+        }),
+      ],
+    });
+  });
+
+  it("applies an operand modifier like .@mul(2) end to end", async () => {
+    const builder = new TimestampDatasetsBuilder();
+
+    builder.setSeries(
+      buildSeriesItems([
+        {
+          enabled: true,
+          timestampMethod: "receiveTime",
+          value: "/foo.val.@mul(2)",
+        },
+      ]),
+    );
+
+    builder.handlePlayerState(
+      buildPlayerState({
+        messages: [
+          {
+            topic: "/foo",
+            schemaName: "foo",
+            receiveTime: { sec: 0, nsec: 0 },
+            sizeInBytes: 0,
+            message: { val: 1.5 },
+          },
+          {
+            topic: "/foo",
+            schemaName: "foo",
+            receiveTime: { sec: 1, nsec: 0 },
+            sizeInBytes: 0,
+            message: { val: 3 },
+          },
+        ],
+      }),
+    );
+
+    await expect(
+      builder.getViewportDatasets({
+        size: { width: 1_000, height: 1_000 },
+        bounds: {},
+      }),
+    ).resolves.toEqual({
+      pathsWithMismatchedDataLengths: new Set(),
+      datasetsByConfigIndex: [
+        expect.objectContaining({
+          data: [
+            { x: 0, y: 3, value: 3 },
+            { x: 1, y: 6, value: 6 },
+          ],
+        }),
+      ],
+    });
+  });
+
   it("should create a discontinuity between current and full", async () => {
     const builder = new TimestampDatasetsBuilder();
 

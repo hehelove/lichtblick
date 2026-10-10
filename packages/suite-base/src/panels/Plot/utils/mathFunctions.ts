@@ -32,6 +32,7 @@ interface PlotMathFunctions {
   ypr: MathFunction;
   yrp: MathFunction;
   norm: MathFunction;
+  length: MathFunction;
 }
 
 export const mathFunctions: PlotMathFunctions = {
@@ -111,9 +112,43 @@ export const mathFunctions: PlotMathFunctions = {
     }
     return NaN;
   },
+
+  length: (value) => {
+    if (Array.isArray(value) || (ArrayBuffer.isView(value) && !(value instanceof DataView))) {
+      return (value as ArrayLike<unknown>).length;
+    }
+    return NaN;
+  },
 };
 
-export function getMathFunction(modifier: string | undefined): MathFunction | undefined {
+// Operand-carrying modifiers (`.@add(2)`, `.@mul(1e-9)`, …). Unlike the unary registry above,
+// these bind their operand inside getMathFunction so the resulting closure still matches the
+// unary MathFunction signature used by resolveChartDatum.
+const operandMathFunctions: Record<
+  "add" | "sub" | "mul" | "div",
+  (value: number, operand: number) => number
+> = {
+  add: (value, operand) => value + operand,
+  sub: (value, operand) => value - operand,
+  mul: (value, operand) => value * operand,
+  div: (value, operand) => value / operand,
+};
+
+export function getMathFunction(
+  modifier: string | undefined,
+  operand?: number,
+): MathFunction | undefined {
+  if (modifier != undefined && modifier in operandMathFunctions) {
+    const fn = operandMathFunctions[modifier as keyof typeof operandMathFunctions];
+    const op = Number(operand); // missing/unresolved operand -> NaN output
+    return (value) => {
+      const chartValue = getChartValue(value);
+      if (chartValue == undefined || Number.isNaN(op)) {
+        return Number.NaN;
+      }
+      return fn(chartValue, op);
+    };
+  }
   return modifier ? mathFunctions[modifier] : undefined;
 }
 

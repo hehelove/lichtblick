@@ -56,7 +56,7 @@ export class CurrentCustomDatasetsBuilder implements IDatasetsBuilder {
 
     let datasetsChanged = false;
     {
-      const xAxisMathFn = getMathFunction(this.#xParsedPath.modifier);
+      const xAxisMathFn = getMathFunction(this.#xParsedPath.modifier, Number(this.#xParsedPath.modifierOperand?.value));
 
       const msgEvent = lastMatchingTopic(msgEvents, this.#xParsedPath.topicName);
       if (msgEvent) {
@@ -76,7 +76,7 @@ export class CurrentCustomDatasetsBuilder implements IDatasetsBuilder {
     }
 
     for (const series of this.#seriesByKey.values()) {
-      const mathFn = getMathFunction(series.parsed.modifier);
+      const mathFn = getMathFunction(series.parsed.modifier, Number(series.parsed.modifierOperand?.value));
 
       const msgEvent = lastMatchingTopic(msgEvents, series.parsed.topicName);
       if (!msgEvent) {

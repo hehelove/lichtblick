@@ -93,7 +93,7 @@ export class TimestampDatasetsBuilder implements IDatasetsBuilder {
         staticSeries,
         { didSeek, hasRangeSource: this.#hasRangeSource },
         (config) => {
-          const mathFn = getMathFunction(config.parsed.modifier);
+          const mathFn = getMathFunction(config.parsed.modifier, Number(config.parsed.modifierOperand?.value));
           return readMessagePathItems(
             msgEvents,
             config.parsed,
@@ -132,7 +132,7 @@ export class TimestampDatasetsBuilder implements IDatasetsBuilder {
 
     const staticSeries = this.#series.filter(({ config }) => !isDynamicSeries(config));
     const actions = buildFullSeriesActions(staticSeries, topic, options, (config) => {
-      const mathFn = getMathFunction(config.parsed.modifier);
+      const mathFn = getMathFunction(config.parsed.modifier, Number(config.parsed.modifierOperand?.value));
       return readMessagePathItems(
         messages,
         config.parsed,

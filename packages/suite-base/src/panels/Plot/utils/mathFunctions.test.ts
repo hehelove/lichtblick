@@ -63,8 +63,27 @@ describe("mathFunctions", () => {
     expect(mathFunctions.roll(yaw90)).toBeCloseTo(0);
   });
 
+  it("length returns array/typed-array lengths, NaN for non-arrays", () => {
+    expect(getMathFunction("length")!([1, 2, 3])).toBe(3);
+    expect(getMathFunction("length")!(new Float32Array(7))).toBe(7);
+    expect(getMathFunction("length")!([])).toBe(0);
+    expect(getMathFunction("length")!(42)).toBeNaN();
+  });
+
+  it("binds numeric operands; missing/zero operands follow JS semantics", () => {
+    expect(getMathFunction("mul", 1e-9)!(5)).toBeCloseTo(5e-9);
+    expect(getMathFunction("div", 0)!(5)).toBe(Infinity);
+    expect(getMathFunction("add")!(5)).toBeNaN(); // no operand -> NaN
+    expect(getMathFunction("add", 2)!(5)).toBe(7);
+    expect(getMathFunction("sub", 2)!(5)).toBe(3);
+    // Operands flow through getChartValue semantics for the *value*: numeric strings and bigints work.
+    expect(getMathFunction("add", 2)!("5")).toBe(7);
+    expect(getMathFunction("mul", 2)!(10n)).toBe(20);
+  });
+
   it("does not register delta as a unary math function", () => {
     // delta is not a unary modifier; the timestamp datasets builder handles it.
     expect(getMathFunction("delta")).toBeUndefined();
+    expect(getMathFunction("timedelta")).toBeUndefined();
   });
 });

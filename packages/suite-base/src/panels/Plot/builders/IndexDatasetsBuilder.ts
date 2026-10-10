@@ -51,7 +51,7 @@ export class IndexDatasetsBuilder implements IDatasetsBuilder {
     const range: Bounds1D = { min: 0, max: 0 };
     let datasetsChanged = false;
     for (const series of this.#seriesByKey.values()) {
-      const mathFn = getMathFunction(series.parsed.modifier);
+      const mathFn = getMathFunction(series.parsed.modifier, Number(series.parsed.modifierOperand?.value));
 
       const msgEvent = lastMatchingTopic(msgEvents, series.parsed.topicName);
       if (!msgEvent) {

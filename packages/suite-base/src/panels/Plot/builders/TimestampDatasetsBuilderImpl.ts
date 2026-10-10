@@ -106,6 +106,14 @@ function getDeltaY(
   return item.y - prevY;
 }
 
+function getTimedeltaY(item: IndexedDatum, prevX: number | undefined): number {
+  // Unlike delta, timedelta differences timestamps (x, in seconds since startTime), not values.
+  if (prevX == undefined || Number.isNaN(item.x)) {
+    return Number.NaN;
+  }
+  return item.x - prevX;
+}
+
 export class TimestampDatasetsBuilderImpl {
   #seriesByKey = new Map<SeriesConfigKey, Series>();
 
@@ -282,23 +290,28 @@ export class TimestampDatasetsBuilderImpl {
     allData.push(...series.current);
 
     const modifier = series.config.parsed.modifier;
-    if (modifier !== "derivative" && modifier !== "delta") {
+    if (modifier !== "derivative" && modifier !== "delta" && modifier !== "timedelta") {
       return allData;
     }
     const delta = modifier === "delta";
+    const timedelta = modifier === "timedelta";
 
     let prevX: number | undefined;
     let prevY: number | undefined;
     for (let i = 0; i < allData.length; ++i) {
       const item = allData[i]!;
       if (i > 0) {
-        const newY = delta ? getDeltaY(item, prevX, prevY) : getDerivativeY(item, prevX, prevY);
+        const newY = delta
+          ? getDeltaY(item, prevX, prevY)
+          : timedelta
+            ? getTimedeltaY(item, prevX)
+            : getDerivativeY(item, prevX, prevY);
         allData[i] = {
           ...item,
           y: newY,
           value: Number.isNaN(newY) ? null : newY,
         };
-      } else if (delta) {
+      } else if (delta || timedelta) {
         // The first datum has no previous value to diff against.
         allData[i] = { ...item, y: Number.NaN, value: null };
       }

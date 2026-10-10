@@ -111,7 +111,7 @@ export class CustomDatasetsBuilder implements IDatasetsBuilder {
         staticSeries,
         { didSeek, hasRangeSource: this.#hasRangeSource },
         (config) => {
-          const mathFn = getMathFunction(config.parsed.modifier);
+          const mathFn = getMathFunction(config.parsed.modifier, Number(config.parsed.modifierOperand?.value));
           return readMessagePathItems(msgEvents, config.parsed, mathFn);
         },
       );
@@ -174,7 +174,7 @@ export class CustomDatasetsBuilder implements IDatasetsBuilder {
 
     const staticSeries = this.#series.filter(({ config }) => !isDynamicSeries(config));
     const actions = buildFullSeriesActions(staticSeries, topic, options, (config) => {
-      const mathFn = getMathFunction(config.parsed.modifier);
+      const mathFn = getMathFunction(config.parsed.modifier, Number(config.parsed.modifierOperand?.value));
       return readMessagePathItems(messages, config.parsed, mathFn);
     });
     this.#pendingDispatch.push(...(actions as UpdateDataAction[]));
@@ -312,7 +312,7 @@ function parseXPathItems(
   messages: Immutable<MessageEvent[]>,
   xParsedPath: Immutable<MessagePath>,
 ): ValueItem[] {
-  const mathFn = getMathFunction(xParsedPath.modifier);
+  const mathFn = getMathFunction(xParsedPath.modifier, Number(xParsedPath.modifierOperand?.value));
   return readMessagePathItems(messages, xParsedPath, mathFn);
 }
 

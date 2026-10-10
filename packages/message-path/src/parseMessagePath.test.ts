@@ -552,6 +552,65 @@ describe("parseRosPath", () => {
     expect(parseMessagePath("/topic.foo{bar==baz}")).toBeUndefined();
   });
 
+  it("parses .@length without operand", () => {
+    const parsed = parseMessagePath("/topic.field.@length")!;
+    expect(parsed.modifier).toBe("length");
+    expect(parsed.modifierOperand).toBeUndefined();
+    // Ambiguity guard: assert the complete parsed object (parseMessagePath keeps feedResults[0]).
+    expect(parsed).toEqual({
+      topicName: "/topic",
+      topicNameRepr: "/topic",
+      messagePath: [{ type: "name", name: "field", repr: "field" }],
+      modifier: "length",
+    });
+  });
+
+  it("parses decimal/exponent/negative operands with repr", () => {
+    const parsed = parseMessagePath("/topic.@mul(1e-9)")!;
+    expect(parsed.modifierOperand).toEqual({ value: 1e-9, repr: "1e-9" });
+    expect(parsed).toEqual({
+      topicName: "/topic",
+      topicNameRepr: "/topic",
+      messagePath: [],
+      modifier: "mul",
+      modifierOperand: { value: 1e-9, repr: "1e-9" },
+    });
+    expect(parseMessagePath("/topic.@add(-2.5)")!.modifierOperand).toEqual({
+      value: -2.5,
+      repr: "-2.5",
+    });
+    expect(parseMessagePath("/topic.@add(0.25)")!.modifierOperand).toEqual({
+      value: 0.25,
+      repr: "0.25",
+    });
+  });
+
+  it("parses integer operand as bigint and variable operand", () => {
+    const parsed = parseMessagePath("/topic.@add(3)")!;
+    expect(parsed.modifierOperand).toEqual({ value: 3n, repr: "3" });
+    expect(parsed).toEqual({
+      topicName: "/topic",
+      topicNameRepr: "/topic",
+      messagePath: [],
+      modifier: "add",
+      modifierOperand: { value: 3n, repr: "3" },
+    });
+    expect(parseMessagePath("/topic.@add($speed)")).toEqual({
+      topicName: "/topic",
+      topicNameRepr: "/topic",
+      messagePath: [],
+      modifier: "add",
+      modifierOperand: {
+        value: { variableName: "speed", startLoc: "/topic.@add(".length },
+        repr: "$speed",
+      },
+    });
+  });
+
+  it("plain modifier still parses without modifierOperand", () => {
+    expect(parseMessagePath("/topic.@derivative")!.modifierOperand).toBeUndefined();
+  });
+
   it("uses the cached value instead of parse the path again", () => {
     jest.mock("nearley");
     const parserFeedSpy = jest.spyOn(Parser.prototype, "feed");
