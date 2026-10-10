@@ -26,15 +26,15 @@ for (let byte = 0; byte < 256; byte++) {
     const a = byte ^ 0x55;
     const segment = (a & 0x70) >> 4;
     const mantissa = a & 0x0f;
-    let sample =
+    const sample =
       segment === 0 ? (mantissa << 4) + 8 : ((mantissa << 4) + 0x108) << (segment - 1);
-    ALAW_TABLE[byte] = a & 0x80 ? sample : -sample;
+    ALAW_TABLE[byte] = (a & 0x80) !== 0 ? sample : -sample;
   }
   {
     const u = ~byte & 0xff;
     let sample = ((u & 0x0f) << 3) + 0x84;
     sample <<= (u & 0x70) >> 4;
-    ULAW_TABLE[byte] = u & 0x80 ? 0x84 - sample : sample - 0x84;
+    ULAW_TABLE[byte] = (u & 0x80) !== 0 ? 0x84 - sample : sample - 0x84;
   }
 }
 

@@ -111,12 +111,11 @@ export function createCanvasRecorder(
           try {
             recorder.stop();
           } catch {
-            // recorder already inactive — its chunks are final
-            if (!settled) {
-              settled = true;
-              clearTimeout(watchdog);
-              resolve(assemble());
-            }
+            // recorder already inactive — its chunks are final. This catch runs synchronously
+            // before any callback can fire, so settled is necessarily still false here.
+            settled = true;
+            clearTimeout(watchdog);
+            resolve(assemble());
           }
         },
       );
