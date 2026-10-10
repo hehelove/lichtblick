@@ -18,6 +18,7 @@ import {
   decodeFloat1c,
   decodeMono16,
   decodeMono8,
+  decodeRCCG12,
   decodeRGB8,
   decodeRGBA8,
   decodeUYVY,
@@ -167,7 +168,10 @@ export const IMAGE_DEFAULT_COLOR_MODE_SETTINGS: Required<
 };
 const MIN_MAX_16_BIT = { minValue: 0, maxValue: 65535 };
 
-export type RawImageOptions = ColorModeSettings;
+export type RawImageOptions = ColorModeSettings & {
+  /** 9-entry row-major color-correction matrix for `rccg12` images ([R, Clear, G] -> [R, G, B]). */
+  colorCorrection?: ReadonlyArray<number>;
+};
 
 /**
  * See also:
@@ -217,6 +221,11 @@ export function decodeRawImage(
       break;
     case "bayer_grbg8":
       decodeBayerGRBG8(rawData, width, height, step, output);
+      break;
+    case "rccg12":
+      decodeRCCG12(rawData, width, height, step, output, {
+        colorCorrection: options.colorCorrection,
+      });
       break;
     case "mono8":
     case "8UC1":

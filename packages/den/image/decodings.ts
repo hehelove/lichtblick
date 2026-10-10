@@ -399,3 +399,111 @@ export const decodeBayerRGGB8 = makeSpecializedDecodeBayer("r", "g0", "g1", "b")
 export const decodeBayerBGGR8 = makeSpecializedDecodeBayer("b", "g0", "g1", "r");
 export const decodeBayerGBRG8 = makeSpecializedDecodeBayer("g0", "b", "r", "g1");
 export const decodeBayerGRBG8 = makeSpecializedDecodeBayer("g0", "r", "b", "g1");
+
+/**
+ * Byte packing layout for `rccg12` (this fork's declared convention):
+ *
+ * Foxglove's public docs name the `rccg12` encoding (Red-Clear-Clear-Green 2x2 pattern) but do
+ * not document its 12-bit byte packing, and no public implementation exists to cross-check. We
+ * use MIPI RAW12 packing: little-endian, 2 pixels per 3 bytes — pixel A occupies byte0 (low 8
+ * bits) plus the LOW nibble of byte1 (high 4 bits), pixel B occupies byte2 (low 8 bits) plus the
+ * HIGH nibble of byte1 (high 4 bits). A row of an odd width ends with a lone trailing pixel
+ * stored in 2 bytes: byte0 (low 8 bits) and the LOW nibble of byte1 (high 4 bits), i.e. the same
+ * layout as the first pixel of a pair. A packed row therefore occupies ceil(width*1.5) bytes and
+ * `step` must be at least that. The `is_bigendian` flag (RosImage only) is ignored for this
+ * packed form: the packing above fixes the byte order.
+ *
+ * Demosaic strategy mirrors makeSpecializedDecodeBayer's 2x2 replication (no interpolation):
+ * each 2x2 region holds R (top-left), Clear (top-right), Clear (bottom-left), G (bottom-right).
+ * All pixels of the region are rendered from the region's R, the TOP-RIGHT Clear sample, and G;
+ * the bottom-left Clear sample is not used. At the right/bottom image edges the sample lookups
+ * are clamped (edge replication) so odd widths/heights decode deterministically.
+ *
+ * `options.colorCorrection` is a 9-entry row-major matrix mapping the measured [R, Clear, G]
+ * vector to displayed [R, G, B] (Foxglove `foxglove.raw_image_color_correction` metadata).
+ * The default is R_out=R, G_out=G, B_out=Clear. Samples are scaled 12->8 bit (x/16) before the
+ * matrix; writes rely on Uint8ClampedArray clamping/rounding, with no per-pixel allocation.
+ */
+export function decodeRCCG12(
+  data: Uint8Array,
+  width: number,
+  height: number,
+  step: number,
+  output: Uint8ClampedArray,
+  options?: { colorCorrection?: ReadonlyArray<number> },
+): void {
+  const minStep = Math.ceil(width * 1.5);
+  if (step < minStep) {
+    throw new Error(`rccg12 image row step (${step}) must be at least ceil(width*1.5) (${minStep})`);
+  }
+  if (data.length < step * height) {
+    throw new Error(`rccg12 image data length (${data.length}) must be at least step*height (${step * height})`);
+  }
+  const ccm = options?.colorCorrection;
+  const m00 = ccm?.[0] ?? 1;
+  const m01 = ccm?.[1] ?? 0;
+  const m02 = ccm?.[2] ?? 0;
+  const m10 = ccm?.[3] ?? 0;
+  const m11 = ccm?.[4] ?? 0;
+  const m12 = ccm?.[5] ?? 1;
+  const m20 = ccm?.[6] ?? 0;
+  const m21 = ccm?.[7] ?? 1;
+  const m22 = ccm?.[8] ?? 0;
+
+  // Read the 12-bit sample at (col, row) from the MIPI RAW12 packed row at `rowStart`.
+  const sample12 = (rowStart: number, col: number): number => {
+    const off = rowStart + (col >> 1) * 3;
+    const base = data[off]!;
+    const nibbles = data[off + 1]!;
+    return (col & 1) === 0
+      ? base | ((nibbles & 0x0f) << 8)
+      : data[off + 2]! | ((nibbles & 0xf0) << 4);
+  };
+
+  for (let regionY = 0; regionY < (height + 1) >> 1; regionY++) {
+    const rRow = regionY * 2 * step;
+    // G row; clamp to the last row when height is odd
+    const gRow = Math.min(regionY * 2 + 1, height - 1) * step;
+    const outTopIdx = regionY * 2 * width * 4;
+    const outBottomIdx = (regionY * 2 + 1) * width * 4;
+    for (let regionX = 0; regionX < (width + 1) >> 1; regionX++) {
+      const col0 = regionX * 2;
+      // Clear/G column; clamp to the last column when width is odd
+      const col1 = Math.min(col0 + 1, width - 1);
+
+      const r = sample12(rRow, col0) / 16;
+      const c = sample12(rRow, col1) / 16;
+      const g = sample12(gRow, col1) / 16;
+
+      const red = m00 * r + m01 * c + m02 * g;
+      const green = m10 * r + m11 * c + m12 * g;
+      const blue = m20 * r + m21 * c + m22 * g;
+
+      // Top row of the region
+      output[outTopIdx + col0 * 4] = red;
+      output[outTopIdx + col0 * 4 + 1] = green;
+      output[outTopIdx + col0 * 4 + 2] = blue;
+      output[outTopIdx + col0 * 4 + 3] = 255;
+      if (col0 + 1 < width) {
+        output[outTopIdx + col0 * 4 + 4] = red;
+        output[outTopIdx + col0 * 4 + 5] = green;
+        output[outTopIdx + col0 * 4 + 6] = blue;
+        output[outTopIdx + col0 * 4 + 7] = 255;
+      }
+
+      // Bottom row of the region (skipped entirely for an odd trailing row)
+      if (regionY * 2 + 1 < height) {
+        output[outBottomIdx + col0 * 4] = red;
+        output[outBottomIdx + col0 * 4 + 1] = green;
+        output[outBottomIdx + col0 * 4 + 2] = blue;
+        output[outBottomIdx + col0 * 4 + 3] = 255;
+        if (col0 + 1 < width) {
+          output[outBottomIdx + col0 * 4 + 4] = red;
+          output[outBottomIdx + col0 * 4 + 5] = green;
+          output[outBottomIdx + col0 * 4 + 6] = blue;
+          output[outBottomIdx + col0 * 4 + 7] = 255;
+        }
+      }
+    }
+  }
+}

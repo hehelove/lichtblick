@@ -26,6 +26,10 @@ import {
   Topic,
 } from "@lichtblick/suite";
 import { AppSetting } from "@lichtblick/suite-base/AppSetting";
+import {
+  MessagePipelineContext,
+  useMessagePipeline,
+} from "@lichtblick/suite-base/components/MessagePipeline";
 import { useAnalytics } from "@lichtblick/suite-base/context/AnalyticsContext";
 import { DEFAULT_SCENE_EXTENSION_CONFIG } from "@lichtblick/suite-base/panels/ThreeDeeRender/SceneExtensionConfig";
 import {
@@ -60,6 +64,7 @@ import {
   makePoseMessage,
 } from "./publish";
 import type { LayerSettingsTransform } from "./renderables/FrameAxes";
+import { parseColorCorrectionRecords } from "./renderables/Images/colorCorrection";
 import { PublishClickEventMap } from "./renderables/PublishClickTool";
 import { DEFAULT_PUBLISH_SETTINGS } from "./renderables/PublishSettings";
 import { synchronizedTopics } from "./topicSynchronization";
@@ -77,6 +82,9 @@ const TRANSFORM_TOPIC_SCHEMAS = new Set<string>([
 ]);
 
 const log = Logger.getLogger(__filename);
+
+const selectGetMetadata = (ctx: MessagePipelineContext) => ctx.getMetadata;
+const selectHasActiveData = (ctx: MessagePipelineContext) => ctx.playerState.activeData != undefined;
 
 /**
  * A panel that renders a 3D scene. This is a thin wrapper around a `Renderer` instance.
@@ -384,6 +392,28 @@ export function ThreeDeeRender(props: Readonly<ThreeDeeRenderProps>): React.JSX.
       renderRef.current.needsRender = true;
     }
   }, [topics, renderer]);
+
+  // Push rccg12 color-correction matrices from file metadata (MCAP-only) into the renderer.
+  // Metadata is not part of RenderState (a deferred player-API change), so it is read through
+  // the pipeline getter instead; the matrix reaches image decoding via the renderable settings.
+  // The getMetadata function identity is stable, so the memo is keyed on activeData presence:
+  // MCAP metadata lands during async player init, before the first activeData, which makes the
+  // false->true transition the point where the metadata first becomes readable.
+  // ponytail: applied when image renderables are created; a renderable that already exists
+  // before a late metadata update picks the matrix up on its next setSettings.
+  const getMetadata = useMessagePipeline(selectGetMetadata);
+  const hasActiveData = useMessagePipeline(selectHasActiveData);
+  const colorCorrections = useMemo(() => {
+    const map = new Map<string, ReadonlyArray<number>>();
+    for (const { topic, matrix } of parseColorCorrectionRecords(getMetadata())) {
+      map.set(topic, matrix);
+    }
+    return map;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- hasActiveData intentionally gates the metadata-readable transition
+  }, [getMetadata, hasActiveData]);
+  useEffect(() => {
+    renderer?.setColorCorrections(colorCorrections);
+  }, [renderer, colorCorrections]);
 
   const hasTransformTopics = useMemo(
     () => topics?.some((topic) => TRANSFORM_TOPIC_SCHEMAS.has(topic.schemaName)) ?? false,

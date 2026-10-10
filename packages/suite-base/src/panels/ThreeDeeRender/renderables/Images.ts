@@ -486,7 +486,11 @@ export class Images extends SceneExtension<ImageRenderable> {
       pose: makePose(),
       settingsPath: ["topics", imageTopic],
       topic: imageTopic,
-      settings: { ...IMAGE_RENDERABLE_DEFAULT_SETTINGS, ...userSettings },
+      settings: {
+        ...IMAGE_RENDERABLE_DEFAULT_SETTINGS,
+        ...userSettings,
+        colorCorrection: this.renderer.colorCorrections.get(imageTopic),
+      },
       cameraInfo: undefined,
       cameraModel: undefined,
       image,

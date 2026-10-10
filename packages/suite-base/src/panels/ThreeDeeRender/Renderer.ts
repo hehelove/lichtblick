@@ -200,6 +200,8 @@ export class Renderer extends EventEmitter<RendererEvents> implements IRenderer 
   public maxLod = DetailLevel.High;
 
   public customCameraModels: CameraModelsMap = new Map();
+  /** topic name -> 9-entry row-major rccg12 color-correction matrix (from MCAP metadata). */
+  public colorCorrections = new Map<string, ReadonlyArray<number>>();
 
   public debugPicking: boolean;
   public config: Immutable<RendererConfig>;
@@ -1926,6 +1928,10 @@ export class Renderer extends EventEmitter<RendererEvents> implements IRenderer 
 
   public setCustomCameraModels(newCameraModels: CameraModelsMap): void {
     this.customCameraModels = newCameraModels;
+  }
+
+  public setColorCorrections(newColorCorrections: Map<string, ReadonlyArray<number>>): void {
+    this.colorCorrections = newColorCorrections;
   }
 }
 

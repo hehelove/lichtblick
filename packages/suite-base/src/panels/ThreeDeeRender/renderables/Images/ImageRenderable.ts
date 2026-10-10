@@ -59,6 +59,8 @@ export interface ImageRenderableSettings extends Partial<ColorModeSettings> {
   color: string;
   brightness: number;
   contrast: number;
+  /** 9-entry row-major color-correction matrix for `rccg12` images ([R, Clear, G] -> [R, G, B]). */
+  colorCorrection?: ReadonlyArray<number>;
 }
 
 const DEFAULT_DISTANCE = 1;
@@ -271,7 +273,8 @@ export class ImageRenderable extends Renderable<ImageUserData> {
       !_.isEqual(prevSettings.gradient, newSettings.gradient) ||
       prevSettings.colorMap !== newSettings.colorMap ||
       prevSettings.minValue !== newSettings.minValue ||
-      prevSettings.maxValue !== newSettings.maxValue
+      prevSettings.maxValue !== newSettings.maxValue ||
+      !_.isEqual(prevSettings.colorCorrection, newSettings.colorCorrection)
     ) {
       this.userData.settings = newSettings;
       // Decode the current image again, which takes into account the new options

@@ -377,6 +377,7 @@ describe("decodeRawImage", () => {
     ["bayer_grbg8", 8],
     ["mono8", 6],
     ["8UC1", 6],
+    ["rccg12", 3],
   ])("should not throw for supported encoding: %s", (encoding, step) => {
     // GIVEN a raw ROS image with a supported encoding and matching row step
     // WHEN it is decoded into an output buffer
@@ -423,6 +424,7 @@ describe("decodeRawImage", () => {
     ["bayer_grbg8", 8],
     ["mono8", 6],
     ["8UC1", 6],
+    ["rccg12", 3],
   ])("should not throw for supported encoding: %s", (encoding, step) => {
     // GIVEN a raw ROS image with a supported encoding and matching row step
     // WHEN it is decoded into an output buffer
@@ -436,6 +438,57 @@ describe("decodeRawImage", () => {
       const output = new Uint8ClampedArray(12);
       decodeRawImage(mockImage, {}, output);
     }).not.toThrow();
+  });
+
+  it("decodes rccg12 with the default color-correction matrix", () => {
+    // GIVEN a 2x2 rccg12 image (R=0xFFF, Clear(top)=0x800, Clear(bottom)=0x400, G=0x001)
+    // hand-packed as MIPI RAW12 (LE, 2px/3B)
+    const mockImage = createMockROSImage({
+      encoding: "rccg12",
+      width: 2,
+      height: 2,
+      step: 3,
+      data: new Uint8Array([0xff, 0x8f, 0x00, 0x00, 0x04, 0x01]),
+    });
+    const output = new Uint8ClampedArray(2 * 2 * 4);
+
+    // WHEN it is decoded with no colorCorrection option
+    decodeRawImage(mockImage, {}, output);
+
+    // THEN every pixel is R_out=R, G_out=G, B_out=Clear under the default CCM
+    expect(output).toEqual(
+      new Uint8ClampedArray([
+        255, 0, 128, 255, //
+        255, 0, 128, 255, //
+        255, 0, 128, 255, //
+        255, 0, 128, 255, //
+      ]),
+    );
+  });
+
+  it("applies a custom color-correction matrix from options to rccg12", () => {
+    // GIVEN the same 2x2 rccg12 image
+    const mockImage = createMockROSImage({
+      encoding: "rccg12",
+      width: 2,
+      height: 2,
+      step: 3,
+      data: new Uint8Array([0xff, 0x8f, 0x00, 0x00, 0x04, 0x01]),
+    });
+    const output = new Uint8ClampedArray(2 * 2 * 4);
+
+    // WHEN it is decoded with a cyclic permutation CCM (R_out=Clear, G_out=G, B_out=R)
+    decodeRawImage(mockImage, { colorCorrection: [0, 1, 0, 0, 0, 1, 1, 0, 0] }, output);
+
+    // THEN the output channels are permuted accordingly
+    expect(output).toEqual(
+      new Uint8ClampedArray([
+        128, 0, 255, 255, //
+        128, 0, 255, 255, //
+        128, 0, 255, 255, //
+        128, 0, 255, 255, //
+      ]),
+    );
   });
 });
 

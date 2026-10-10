@@ -11,6 +11,7 @@ import "@testing-library/jest-dom";
 import { act, render, waitFor } from "@testing-library/react";
 
 import { Topic } from "@lichtblick/suite";
+import MockMessagePipelineProvider from "@lichtblick/suite-base/components/MessagePipeline/MockMessagePipelineProvider";
 import { BuiltinPanelExtensionContext } from "@lichtblick/suite-base/components/PanelExtensionAdapter";
 import { useAnalytics } from "@lichtblick/suite-base/context/AnalyticsContext";
 import {
@@ -45,6 +46,7 @@ const createMockRenderer = (overrides?: Record<string, any>) => {
     dispose: jest.fn(),
     config: {},
     setTopics: jest.fn(),
+    setColorCorrections: jest.fn(),
     setParameters: jest.fn(),
     setCurrentTime: jest.fn(),
     handleSeek: jest.fn(),
@@ -220,7 +222,11 @@ describe("ThreeDeeRender", () => {
     const props = setup();
 
     // When
-    const { container } = render(<ThreeDeeRender {...props} />);
+    const { container } = render(
+      <MockMessagePipelineProvider>
+        <ThreeDeeRender {...props} />
+      </MockMessagePipelineProvider>,
+    );
 
     // Then
     expect(container).toBeInTheDocument();
@@ -231,7 +237,11 @@ describe("ThreeDeeRender", () => {
     const props = setup();
 
     // When
-    const { container } = render(<ThreeDeeRender {...props} />);
+    const { container } = render(
+      <MockMessagePipelineProvider>
+        <ThreeDeeRender {...props} />
+      </MockMessagePipelineProvider>,
+    );
 
     // Then
     const canvas = container.querySelector("canvas");
@@ -241,7 +251,11 @@ describe("ThreeDeeRender", () => {
   it("renders the RendererOverlay component", () => {
     const props = setup();
 
-    const { getByTestId } = render(<ThreeDeeRender {...props} />);
+    const { getByTestId } = render(
+      <MockMessagePipelineProvider>
+        <ThreeDeeRender {...props} />
+      </MockMessagePipelineProvider>,
+    );
     expect(getByTestId("renderer-overlay")).toBeInTheDocument();
   });
 
@@ -250,7 +264,11 @@ describe("ThreeDeeRender", () => {
     const props = setup();
 
     // When
-    const { container } = render(<ThreeDeeRender {...props} />);
+    const { container } = render(
+      <MockMessagePipelineProvider>
+        <ThreeDeeRender {...props} />
+      </MockMessagePipelineProvider>,
+    );
     expect(container).toBeInTheDocument();
 
     // Then
@@ -282,7 +300,11 @@ describe("ThreeDeeRender", () => {
     const props = setup({}, { initialState: customCameraState });
 
     // When
-    const { container } = render(<ThreeDeeRender {...props} />);
+    const { container } = render(
+      <MockMessagePipelineProvider>
+        <ThreeDeeRender {...props} />
+      </MockMessagePipelineProvider>,
+    );
 
     // Then
     expect(container).toBeInTheDocument();
@@ -302,7 +324,11 @@ describe("ThreeDeeRender", () => {
     const props = setup({ ...initialState });
 
     // When
-    const { container } = render(<ThreeDeeRender {...props} />);
+    const { container } = render(
+      <MockMessagePipelineProvider>
+        <ThreeDeeRender {...props} />
+      </MockMessagePipelineProvider>,
+    );
 
     // Then
     expect(container).toBeInTheDocument();
@@ -322,7 +348,11 @@ describe("ThreeDeeRender", () => {
     };
     const props = setup({ customSceneExtensions });
 
-    const { container } = render(<ThreeDeeRender {...props} />);
+    const { container } = render(
+      <MockMessagePipelineProvider>
+        <ThreeDeeRender {...props} />
+      </MockMessagePipelineProvider>,
+    );
     expect(container).toBeInTheDocument();
 
     expect(mockedRenderer).toHaveBeenCalled();
@@ -351,7 +381,11 @@ describe("ThreeDeeRender", () => {
 
     const props = setup({ customCameraModels });
 
-    const { container } = render(<ThreeDeeRender {...props} />);
+    const { container } = render(
+      <MockMessagePipelineProvider>
+        <ThreeDeeRender {...props} />
+      </MockMessagePipelineProvider>,
+    );
     expect(container).toBeInTheDocument();
     expect(mockedRenderer).toHaveBeenCalled();
     const rendererCall = mockedRenderer.mock.calls[0]?.[0];
@@ -374,7 +408,11 @@ describe("ThreeDeeRender", () => {
 
       const mockContext = createMockContext();
       const props = setup({}, mockContext);
-      render(<ThreeDeeRender {...props} />);
+      render(
+      <MockMessagePipelineProvider>
+        <ThreeDeeRender {...props} />
+      </MockMessagePipelineProvider>,
+    );
 
       await waitFor(() => {
         expect(mockContext.onRender).toBeDefined();
@@ -409,7 +447,11 @@ describe("ThreeDeeRender", () => {
 
       const mockContext = createMockContext();
       const props = setup({}, mockContext);
-      render(<ThreeDeeRender {...props} />);
+      render(
+      <MockMessagePipelineProvider>
+        <ThreeDeeRender {...props} />
+      </MockMessagePipelineProvider>,
+    );
 
       await waitFor(() => {
         expect(mockContext.onRender).toBeDefined();
@@ -452,7 +494,11 @@ describe("ThreeDeeRender", () => {
 
       const mockContext = createMockContext();
       const props = setup({}, mockContext);
-      render(<ThreeDeeRender {...props} />);
+      render(
+      <MockMessagePipelineProvider>
+        <ThreeDeeRender {...props} />
+      </MockMessagePipelineProvider>,
+    );
 
       await waitFor(() => {
         expect(mockContext.onRender).toBeDefined();
@@ -539,7 +585,11 @@ describe("ThreeDeeRender", () => {
       const props = setup({}, mockContext);
 
       // When
-      render(<ThreeDeeRender {...props} />);
+      render(
+      <MockMessagePipelineProvider>
+        <ThreeDeeRender {...props} />
+      </MockMessagePipelineProvider>,
+    );
 
       await waitFor(() => {
         expect(customRendererInstance.setTopics).toBeDefined();
@@ -581,7 +631,11 @@ describe("ThreeDeeRender", () => {
         RenderStateBuilder.topic({ name: "/tf", schemaName: "tf2_msgs/TFMessage" }),
         RenderStateBuilder.topic({ name: "/other", schemaName: "std_msgs/String" }),
       ];
-      const { rerender } = render(<ThreeDeeRender {...props} />);
+      const { rerender } = render(
+      <MockMessagePipelineProvider>
+        <ThreeDeeRender {...props} />
+      </MockMessagePipelineProvider>,
+    );
       await waitFor(() => {
         expect(customRendererInstance.setTopics).toBeDefined();
         expect(mockContext.onRender).toBeDefined();
@@ -610,7 +664,11 @@ describe("ThreeDeeRender", () => {
         mockContext.onRender!({ topics: newTopics }, jest.fn());
       });
 
-      rerender(<ThreeDeeRender {...props} />);
+      rerender(
+        <MockMessagePipelineProvider>
+          <ThreeDeeRender {...props} />
+        </MockMessagePipelineProvider>,
+      );
 
       // Then
       // subscribeMessageRange was called 3 times:
@@ -636,7 +694,11 @@ describe("ThreeDeeRender", () => {
         RenderStateBuilder.topic({ name: "/tf", schemaName: "tf2_msgs/TFMessage" }),
         RenderStateBuilder.topic({ name: "/other", schemaName: "std_msgs/String" }),
       ];
-      const { rerender } = render(<ThreeDeeRender {...props} />);
+      const { rerender } = render(
+      <MockMessagePipelineProvider>
+        <ThreeDeeRender {...props} />
+      </MockMessagePipelineProvider>,
+    );
       await waitFor(() => {
         expect(customRendererInstance.setTopics).toBeDefined();
         expect(mockContext.onRender).toBeDefined();
@@ -667,7 +729,11 @@ describe("ThreeDeeRender", () => {
         mockContext.onRender!({ topics: newTopics }, jest.fn());
       });
 
-      rerender(<ThreeDeeRender {...props} />);
+      rerender(
+        <MockMessagePipelineProvider>
+          <ThreeDeeRender {...props} />
+        </MockMessagePipelineProvider>,
+      );
 
       // Then
       // subscribeMessageRange was not called again
@@ -692,7 +758,11 @@ describe("ThreeDeeRender", () => {
         const topics = [
           RenderStateBuilder.topic({ name: "/tf", schemaName: "tf2_msgs/TFMessage" }),
         ];
-        render(<ThreeDeeRender {...props} />);
+        render(
+      <MockMessagePipelineProvider>
+        <ThreeDeeRender {...props} />
+      </MockMessagePipelineProvider>,
+    );
         await waitFor(() => {
           expect(customRendererInstance.setTopics).toBeDefined();
           expect(mockContext.onRender).toBeDefined();
@@ -745,7 +815,11 @@ describe("ThreeDeeRender", () => {
         const topics = [
           RenderStateBuilder.topic({ name: "/tf", schemaName: "tf2_msgs/TFMessage" }),
         ];
-        const { unmount } = render(<ThreeDeeRender {...props} />);
+        const { unmount } = render(
+      <MockMessagePipelineProvider>
+        <ThreeDeeRender {...props} />
+      </MockMessagePipelineProvider>,
+    );
         await waitFor(() => {
           expect(customRendererInstance.setTopics).toBeDefined();
           expect(mockContext.onRender).toBeDefined();
@@ -810,7 +884,11 @@ describe("ThreeDeeRender", () => {
       const props = setup({}, mockContext);
 
       // When
-      render(<ThreeDeeRender {...props} />);
+      render(
+      <MockMessagePipelineProvider>
+        <ThreeDeeRender {...props} />
+      </MockMessagePipelineProvider>,
+    );
 
       await waitFor(() => {
         expect(customRendererInstance.setTopics).toBeDefined();
@@ -902,7 +980,11 @@ describe("ThreeDeeRender", () => {
       const props = setup({}, mockContext);
 
       // When
-      render(<ThreeDeeRender {...props} />);
+      render(
+      <MockMessagePipelineProvider>
+        <ThreeDeeRender {...props} />
+      </MockMessagePipelineProvider>,
+    );
 
       await waitFor(() => {
         expect(customRendererInstance.setTopics).toBeDefined();
@@ -991,7 +1073,11 @@ describe("ThreeDeeRender", () => {
       const props = setup({}, mockContext);
 
       // When
-      const { container } = render(<ThreeDeeRender {...props} />);
+      const { container } = render(
+      <MockMessagePipelineProvider>
+        <ThreeDeeRender {...props} />
+      </MockMessagePipelineProvider>,
+    );
 
       await waitFor(() => {
         expect(customRendererInstance.setTopics).toBeDefined();
@@ -1052,7 +1138,11 @@ describe("ThreeDeeRender", () => {
       const props = setup({}, mockContext);
 
       // When
-      render(<ThreeDeeRender {...props} />);
+      render(
+      <MockMessagePipelineProvider>
+        <ThreeDeeRender {...props} />
+      </MockMessagePipelineProvider>,
+    );
 
       await waitFor(() => {
         expect(customRendererInstance.setTopics).toBeDefined();
@@ -1140,7 +1230,11 @@ describe("ThreeDeeRender", () => {
       const props = setup({}, mockContext);
 
       // When
-      const { container } = render(<ThreeDeeRender {...props} />);
+      const { container } = render(
+      <MockMessagePipelineProvider>
+        <ThreeDeeRender {...props} />
+      </MockMessagePipelineProvider>,
+    );
 
       await waitFor(() => {
         expect(customRendererInstance.setTopics).toBeDefined();
@@ -1205,7 +1299,11 @@ describe("ThreeDeeRender", () => {
       const props = setup({}, mockContext);
 
       // When
-      render(<ThreeDeeRender {...props} />);
+      render(
+      <MockMessagePipelineProvider>
+        <ThreeDeeRender {...props} />
+      </MockMessagePipelineProvider>,
+    );
 
       await waitFor(() => {
         expect(customRendererInstance.setTopics).toBeDefined();
@@ -1275,7 +1373,11 @@ describe("ThreeDeeRender", () => {
       const mockContext = createMockContext();
       const props = setup({}, mockContext);
 
-      render(<ThreeDeeRender {...props} />);
+      render(
+      <MockMessagePipelineProvider>
+        <ThreeDeeRender {...props} />
+      </MockMessagePipelineProvider>,
+    );
       await waitFor(() => {
         expect(mockContext.onRender).toBeDefined();
       });
@@ -1311,7 +1413,11 @@ describe("ThreeDeeRender", () => {
       });
       const props = setup({}, mockContext);
 
-      render(<ThreeDeeRender {...props} />);
+      render(
+      <MockMessagePipelineProvider>
+        <ThreeDeeRender {...props} />
+      </MockMessagePipelineProvider>,
+    );
       await waitFor(() => {
         expect(mockContext.onRender).toBeDefined();
       });
@@ -1335,7 +1441,11 @@ describe("ThreeDeeRender", () => {
       const mockContext = createMockContext();
       const props = setup({}, mockContext);
 
-      render(<ThreeDeeRender {...props} />);
+      render(
+      <MockMessagePipelineProvider>
+        <ThreeDeeRender {...props} />
+      </MockMessagePipelineProvider>,
+    );
       await waitFor(() => {
         expect(mockContext.onRender).toBeDefined();
       });
@@ -1358,7 +1468,11 @@ describe("ThreeDeeRender", () => {
       const mockContext = createMockContext({ unstable_setAlert: undefined });
       const props = setup({}, mockContext);
 
-      render(<ThreeDeeRender {...props} />);
+      render(
+      <MockMessagePipelineProvider>
+        <ThreeDeeRender {...props} />
+      </MockMessagePipelineProvider>,
+    );
       await waitFor(() => {
         expect(mockContext.onRender).toBeDefined();
       });
@@ -1391,7 +1505,11 @@ describe("ThreeDeeRender", () => {
           },
         },
       });
-      render(<ThreeDeeRender {...setup({}, mockContext)} />);
+      render(
+        <MockMessagePipelineProvider>
+          <ThreeDeeRender {...setup({}, mockContext)} />
+        </MockMessagePipelineProvider>,
+      );
       await waitFor(() => {
         expect(mockContext.onRender).toBeDefined();
       });
@@ -1436,7 +1554,11 @@ describe("ThreeDeeRender", () => {
           topics: { "/a": { visible: true, synchronize: true } },
         },
       });
-      render(<ThreeDeeRender {...setup({}, mockContext)} />);
+      render(
+        <MockMessagePipelineProvider>
+          <ThreeDeeRender {...setup({}, mockContext)} />
+        </MockMessagePipelineProvider>,
+      );
       await waitFor(() => {
         expect(mockContext.onRender).toBeDefined();
       });
