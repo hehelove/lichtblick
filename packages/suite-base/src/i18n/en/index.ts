@@ -7,6 +7,7 @@
 
 export * from "./addPanel";
 export * from "./appBar";
+export * from "./audio";
 export * from "./appSettings";
 export * from "./commandPalette";
 export * from "./dataSourceInfo";
