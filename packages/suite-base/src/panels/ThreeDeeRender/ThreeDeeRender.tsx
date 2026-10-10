@@ -30,6 +30,7 @@ import {
   MessagePipelineContext,
   useMessagePipeline,
 } from "@lichtblick/suite-base/components/MessagePipeline";
+import { registerRecordableCanvas } from "@lichtblick/suite-base/components/PlaybackControls/videoExport/recordableCanvases";
 import { useAnalytics } from "@lichtblick/suite-base/context/AnalyticsContext";
 import { DEFAULT_SCENE_EXTENSION_CONFIG } from "@lichtblick/suite-base/panels/ThreeDeeRender/SceneExtensionConfig";
 import {
@@ -98,6 +99,8 @@ export function ThreeDeeRender(props: Readonly<ThreeDeeRenderProps>): React.JSX.
     customCameraModels,
     enqueueSnackbarFromParent,
     logError,
+    panelId,
+    panelTitle,
   } = props;
   const {
     initialState,
@@ -196,6 +199,18 @@ export function ThreeDeeRender(props: Readonly<ThreeDeeRenderProps>): React.JSX.
   useEffect(() => {
     renderer?.setCustomCameraModels(customCameraModels);
   }, [renderer, customCameraModels]);
+
+  // Register the canvas for video export (covers 3D and Image panels). PanelContext is
+  // not visible from this sync root, so id/title are threaded down from the adapter.
+  useEffect(() => {
+    if (canvas == undefined || panelId == undefined) {
+      return;
+    }
+    return registerRecordableCanvas(panelId, {
+      canvas,
+      title: panelTitle ?? (interfaceMode === "image" ? "Image" : "3D"),
+    });
+  }, [canvas, panelId, panelTitle, interfaceMode]);
 
   useEffect(() => {
     if (renderer) {

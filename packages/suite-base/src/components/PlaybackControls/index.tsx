@@ -26,9 +26,11 @@ import {
   Play20Regular,
   Previous20Filled,
   Previous20Regular,
+  Record20Regular,
 } from "@fluentui/react-icons";
 import { Tooltip } from "@mui/material";
 import { useCallback, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { Time, compare } from "@lichtblick/rostime";
 import { CreateEventDialog } from "@lichtblick/suite-base/components/CreateEventDialog";
@@ -58,6 +60,8 @@ import BroadcastManager from "@lichtblick/suite-base/util/broadcast/BroadcastMan
 import PlaybackTimeDisplay from "./PlaybackTimeDisplay";
 import { RepeatAdapter } from "./RepeatAdapter";
 import Scrubber from "./Scrubber";
+import { VideoExportAdapter, useActiveVideoExportSession } from "./VideoExportAdapter";
+import { VideoExportDialog } from "./VideoExportDialog";
 
 const selectPresence = (ctx: MessagePipelineContext) => ctx.playerState.presence;
 const selectEventsSupported = (store: EventsStore) => store.eventsSupported;
@@ -83,8 +87,11 @@ export default function PlaybackControls({
   const presence = useMessagePipeline(selectPresence);
 
   const { classes, cx } = useStyles();
+  const { t } = useTranslation("videoExport");
   const repeat = useWorkspaceStore(selectPlaybackRepeat);
   const [createEventDialogOpen, setCreateEventDialogOpen] = useState(false);
+  const [videoExportDialogOpen, setVideoExportDialogOpen] = useState(false);
+  const videoExportSession = useActiveVideoExportSession();
   const eventsSupported = useEvents(selectEventsSupported);
 
   const {
@@ -148,6 +155,7 @@ export default function PlaybackControls({
   return (
     <>
       <RepeatAdapter play={play} seek={seek} repeatEnabled={repeat} />
+      <VideoExportAdapter />
       <KeyListener global keyDownHandlers={keyDownHandlers} />
       <div className={classes.root}>
         <div className={classes.scrubberWrapper}>
@@ -227,6 +235,15 @@ export default function PlaybackControls({
             <SyncInstanceToggle />
             <HoverableIconButton
               size="small"
+              title={t("buttonTitle")}
+              color={videoExportSession ? "primary" : "inherit"}
+              onClick={() => {
+                setVideoExportDialogOpen(true);
+              }}
+              icon={<Record20Regular />}
+            />
+            <HoverableIconButton
+              size="small"
               title="Loop playback"
               color={repeat ? "primary" : "inherit"}
               onClick={toggleRepeat}
@@ -237,6 +254,13 @@ export default function PlaybackControls({
         </Stack>
         {createEventDialogOpen && eventsSupported && (
           <CreateEventDialog onClose={toggleCreateEventDialog} />
+        )}
+        {videoExportDialogOpen && (
+          <VideoExportDialog
+            onClose={() => {
+              setVideoExportDialogOpen(false);
+            }}
+          />
         )}
       </div>
     </>

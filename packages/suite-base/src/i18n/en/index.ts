@@ -29,4 +29,5 @@ export * from "./settingsEditor";
 export * from "./stateTransitions";
 export * from "./threeDee";
 export * from "./topicList";
+export * from "./videoExport";
 export * from "./workspace";

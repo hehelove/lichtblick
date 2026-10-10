@@ -37,6 +37,12 @@ export type ThreeDeeRenderProps = {
   ) => void;
   /** Allow for logging errors to panel logs */
   logError?: (message: string, error?: Error) => void;
+  /**
+   * Mosaic panel id/title, threaded from PanelContext for the video-export canvas
+   * registry (PanelContext itself is not visible inside the sync root).
+   */
+  panelId?: string;
+  panelTitle?: string;
 };
 
 export type InitPanelArgs = {
@@ -51,4 +57,6 @@ export type InitPanelArgs = {
     variant?: "default" | "error" | "success" | "warning" | "info",
   ) => void;
   logError?: (message: string, error?: Error) => void;
+  panelId?: string;
+  panelTitle?: string;
 };

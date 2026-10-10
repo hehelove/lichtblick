@@ -39,6 +39,8 @@ function initPanel(args: InitPanelArgs, context: BuiltinPanelExtensionContext) {
     customCameraModels,
     enqueueSnackbarFromParent,
     logError,
+    panelId,
+    panelTitle,
   } = args;
   return createSyncRoot(
     <CaptureErrorBoundary onError={crash}>
@@ -51,6 +53,8 @@ function initPanel(args: InitPanelArgs, context: BuiltinPanelExtensionContext) {
           customCameraModels={customCameraModels}
           enqueueSnackbarFromParent={enqueueSnackbarFromParent}
           logError={logError}
+          panelId={panelId}
+          panelTitle={panelTitle}
         />
       </ForwardAnalyticsContextProvider>
     </CaptureErrorBoundary>,
@@ -105,6 +109,8 @@ function ThreeDeeRenderAdapter(interfaceMode: InterfaceMode, props: Props) {
           enqueueSnackbar(message, { variant: variant ?? "default" });
         },
         logError: panelContext?.logError,
+        panelId: panelContext?.id,
+        panelTitle: panelContext?.title,
       }),
     [
       crash,
@@ -116,6 +122,8 @@ function ThreeDeeRenderAdapter(interfaceMode: InterfaceMode, props: Props) {
       customCameraModels,
       enqueueSnackbar,
       panelContext?.logError,
+      panelContext?.id,
+      panelContext?.title,
     ],
   );
 
