@@ -413,3 +413,31 @@ describe("collateTopicSchemaConversions with topic converters", () => {
     expect(unconvertedSubscriptionTopics.has("/plain")).toBe(true);
   });
 });
+
+describe("collateTopicSchemaConversions converter priority", () => {
+  const makeSchemaConverter = (
+    extensionNamespace: string | undefined,
+  ): InstalledMessageConverter =>
+    ({
+      type: "schema",
+      fromSchemaName: "sensor_msgs/msg/CompressedImage",
+      toSchemaName: "foxglove.CompressedVideo",
+      converter: jest.fn(),
+      extensionNamespace,
+    }) as unknown as InstalledMessageConverter;
+
+  it("prefers a namespaced (extension) converter over a namespace-less builtin", () => {
+    // Builtins carry no extensionNamespace; minBy sorts "local"/"org" before
+    // "unknown", so extensions keep priority over builtinMessageConverters.
+    const builtin = makeSchemaConverter(undefined);
+    const extension = makeSchemaConverter("local");
+    const { topicSchemaConverters } = collateTopicSchemaConversions(
+      [{ topic: "/cam", convertTo: "foxglove.CompressedVideo" }],
+      [{ name: "/cam", schemaName: "sensor_msgs/msg/CompressedImage" }],
+      [builtin, extension],
+    );
+    const registered = [...topicSchemaConverters.values()].flat();
+    expect(registered).toHaveLength(1);
+    expect(registered[0]).toBe(extension);
+  });
+});
