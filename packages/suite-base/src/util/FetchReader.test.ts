@@ -66,4 +66,40 @@ describe("FetchReader", () => {
       expect(mockFetch).not.toHaveBeenCalled();
     });
   });
+
+  describe("error handling", () => {
+    it("emits the x-foxglove-error-message header value on non-ok responses", async () => {
+      mockGlobalRequestQueue.run.mockImplementation(async (fn) => await fn());
+      mockFetch.mockResolvedValue(
+        new Response(undefined, {
+          status: 403,
+          headers: { "x-foxglove-error-message": "This file is no longer available" },
+        }),
+      );
+
+      const reader = new FetchReader(url);
+      const errorPromise = new Promise<Error>((resolve) => {
+        reader.on("error", resolve);
+      });
+      reader.read();
+
+      const err = await errorPromise;
+      expect(err.message).toBe("This file is no longer available");
+    });
+
+    it("falls back to the status-based message when the header is absent", async () => {
+      mockGlobalRequestQueue.run.mockImplementation(async (fn) => await fn());
+      mockFetch.mockResolvedValue(new Response(undefined, { status: 500 }));
+
+      const reader = new FetchReader(url);
+      const errorPromise = new Promise<Error>((resolve) => {
+        reader.on("error", resolve);
+      });
+      reader.read();
+
+      const err = await errorPromise;
+      expect(err.message).toContain("failed with status 500");
+      expect(err.message).not.toContain("This file is no longer available");
+    });
+  });
 });

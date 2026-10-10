@@ -311,6 +311,8 @@ describe("McapIterableSource", () => {
       const mcapData = await buildUnindexedMcap([{ logTime: 3_000_000_000n }]);
       mockRemoteFileReadableWith(mcapData);
       const mockFetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
         body: new Blob([mcapData]).stream(),
         headers: new Headers({ "content-length": String(mcapData.byteLength) }),
       });
@@ -341,6 +343,8 @@ describe("McapIterableSource", () => {
       const mcapData = await buildUnindexedMcap([{ logTime: 1_000_000_000n }]);
       mockRemoteFileReadableWith(mcapData);
       global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
         body: undefined,
         headers: new Headers({ "content-length": String(mcapData.byteLength) }),
       });
@@ -359,6 +363,8 @@ describe("McapIterableSource", () => {
       const mcapData = await buildUnindexedMcap([{ logTime: 1_000_000_000n }]);
       mockRemoteFileReadableWith(mcapData);
       global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
         body: new Blob([mcapData]).stream(),
         headers: new Headers(),
       });
@@ -370,6 +376,28 @@ describe("McapIterableSource", () => {
       await expect(source.initialize()).rejects.toThrow(
         `Remote file is missing Content-Length header. <${urlUnindexedMcap}>`,
       );
+    });
+
+    it("should throw with the backend error message when fetch response is not ok", async () => {
+      // Given an unindexed MCAP served via URL where fetch fails with a backend error header
+      // (e.g. a 404 HTML error page must not be parsed as an MCAP stream)
+      const mcapData = await buildUnindexedMcap([{ logTime: 1_000_000_000n }]);
+      mockRemoteFileReadableWith(mcapData);
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: false,
+        status: 404,
+        body: new Blob(["<html>Not Found</html>"]).stream(),
+        headers: new Headers({
+          "content-length": "24",
+          "x-foxglove-error-message": "This file is no longer available",
+        }),
+      });
+
+      // When initializing the source
+      const source = new McapIterableSource({ type: "url", url: urlUnindexedMcap });
+
+      // Then it should throw the backend-provided error message
+      await expect(source.initialize()).rejects.toThrow("This file is no longer available");
     });
 
     describe("with a bounded HydratedSourcePool", () => {

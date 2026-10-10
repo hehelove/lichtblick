@@ -19,6 +19,21 @@ import { DetailsType } from "@lichtblick/suite-base/util/sendNotification";
 
 const log = Log.getLogger(__filename);
 
+/**
+ * Extract a human-readable error message from a non-2xx HTTP response.
+ *
+ * Backends implementing the Foxglove Remote Data Loader protocol may set the
+ * `x-foxglove-error-message` header on error responses; when present (non-empty) it takes
+ * precedence over the given fallback message.
+ */
+export function responseErrorMessage(response: Response, fallback: string): string {
+  const message = response.headers.get("x-foxglove-error-message");
+  if (message != undefined && message.length > 0) {
+    return message;
+  }
+  return fallback;
+}
+
 export class AppError extends Error {
   public details: DetailsType;
   public extraInfo: unknown;
