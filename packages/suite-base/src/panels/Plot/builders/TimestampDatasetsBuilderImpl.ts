@@ -90,6 +90,22 @@ function getDerivativeY(
   return (item.y - prevY) / (item.x - prevX);
 }
 
+function getDeltaY(
+  item: IndexedDatum,
+  prevX: number | undefined,
+  prevY: number | undefined,
+): number {
+  if (
+    prevX == undefined ||
+    prevY == undefined ||
+    Number.isNaN(item.x) ||
+    Number.isNaN(item.y)
+  ) {
+    return Number.NaN;
+  }
+  return item.y - prevY;
+}
+
 export class TimestampDatasetsBuilderImpl {
   #seriesByKey = new Map<SeriesConfigKey, Series>();
 
@@ -265,21 +281,26 @@ export class TimestampDatasetsBuilderImpl {
     const allData: IndexedDatum[] = series.full.slice();
     allData.push(...series.current);
 
-    if (series.config.parsed.modifier !== "derivative") {
+    const modifier = series.config.parsed.modifier;
+    if (modifier !== "derivative" && modifier !== "delta") {
       return allData;
     }
+    const delta = modifier === "delta";
 
     let prevX: number | undefined;
     let prevY: number | undefined;
     for (let i = 0; i < allData.length; ++i) {
       const item = allData[i]!;
       if (i > 0) {
-        const newY = getDerivativeY(item, prevX, prevY);
+        const newY = delta ? getDeltaY(item, prevX, prevY) : getDerivativeY(item, prevX, prevY);
         allData[i] = {
           ...item,
           y: newY,
           value: Number.isNaN(newY) ? null : newY,
         };
+      } else if (delta) {
+        // The first datum has no previous value to diff against.
+        allData[i] = { ...item, y: Number.NaN, value: null };
       }
 
       if (Number.isNaN(item.x) || Number.isNaN(item.y)) {

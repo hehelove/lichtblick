@@ -3,7 +3,10 @@
 
 import * as THREE from "three";
 
-import { mathFunctions } from "@lichtblick/suite-base/panels/Plot/utils/mathFunctions";
+import {
+  getMathFunction,
+  mathFunctions,
+} from "@lichtblick/suite-base/panels/Plot/utils/mathFunctions";
 import { BasicBuilder } from "@lichtblick/test-builders";
 
 describe("mathFunctions", () => {
@@ -58,5 +61,10 @@ describe("mathFunctions", () => {
     expect(mathFunctions.yaw(yaw90)).toBeCloseTo(90);
     expect(mathFunctions.pitch(yaw90)).toBeCloseTo(0);
     expect(mathFunctions.roll(yaw90)).toBeCloseTo(0);
+  });
+
+  it("does not register delta as a unary math function", () => {
+    // delta is not a unary modifier; the timestamp datasets builder handles it.
+    expect(getMathFunction("delta")).toBeUndefined();
   });
 });

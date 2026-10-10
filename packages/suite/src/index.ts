@@ -633,6 +633,12 @@ export type RegisterMessageConverterArgs<Src> = {
   /** Schema name of messages emitted on `outputTopic`. */
   outputSchemaName?: string;
   /**
+   * Human-readable description of the output schema (`toSchemaName` for schema
+   * converters, `outputSchemaName` for topic converters). Not yet surfaced in
+   * the UI; reserved for upcoming schema documentation support.
+   */
+  outputSchemaDescription?: string;
+  /**
    * Initializes the converter. Called when a panel subscribes to `outputTopic`; receives the
    * current global variables and returns a function invoked with every input MessageEvent that
    * returns the converted message(s) (or undefined to skip).
