@@ -18,6 +18,11 @@ export enum ColorModeConfig {
   GRADIENT = "gradient",
 }
 
+export enum GaugeStyleConfig {
+  DIAL = "dial",
+  BAR = "bar",
+}
+
 export type GaugeConfig = {
   colorMap: ColorMapConfig;
   colorMode: ColorModeConfig;
@@ -26,6 +31,8 @@ export type GaugeConfig = {
   minValue: number;
   path: string;
   reverse: boolean;
+  reverseDirection: boolean;
+  style: GaugeStyleConfig;
 };
 
 export type ColorStops = {
@@ -47,6 +54,10 @@ export type BuildConicGradientProps = {
   gaugeAngle: number;
   height: number;
   width: number;
+};
+
+export type BuildLinearGradientProps = {
+  config: Pick<GaugeConfig, "colorMap" | "colorMode" | "gradient" | "reverse">;
 };
 
 export type SettingsActionReducerProps = {

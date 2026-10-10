@@ -12,12 +12,13 @@ import { parseMessagePath } from "@lichtblick/message-path";
 import { SettingsTreeAction } from "@lichtblick/suite";
 import { useStyles } from "@lichtblick/suite-base/panels/Gauge/Gauge.style";
 import { buildConicGradient } from "@lichtblick/suite-base/panels/Gauge/buildConicGradient";
+import { buildLinearGradient } from "@lichtblick/suite-base/panels/Gauge/buildLinearGradient";
 import { DEFAULT_CONFIG } from "@lichtblick/suite-base/panels/Gauge/constants";
 import { stateReducer } from "@lichtblick/suite-base/panels/shared/gaugeAndIndicatorStateReducer";
 import { GaugeAndIndicatorState } from "@lichtblick/suite-base/panels/shared/types";
 
 import { settingsActionReducer } from "./settingsActionReducer";
-import { GaugeConfig, GaugeProps } from "./types";
+import { GaugeConfig, GaugeProps, GaugeStyleConfig } from "./types";
 import { useSettingsTree } from "./useSettingsTree";
 
 export function Gauge({ context }: GaugeProps): React.JSX.Element {
@@ -133,6 +134,41 @@ export function Gauge({ context }: GaugeProps): React.JSX.Element {
   const needleThickness = 8;
   const needleExtraLength = 0.05;
   const [clipPathId] = useState(() => `gauge-clip-path-${uuidv4()}`);
+
+  // The bar variant renders a full-width horizontal progress bar instead of the dial. Mirrors
+  // the dial conventions: 0.5 opacity without data, orange edge marker when out of bounds.
+  // reverseDirection mirrors the track (scaleX(-1)): gradient direction and the unfilled
+  // segment swap sides, i.e. min ends up on the right and max on the left.
+  if (config.style === GaugeStyleConfig.BAR) {
+    return (
+      <div className={classes.root}>
+        <div className={classes.barContainer}>
+          <div
+            className={classes.barTrack}
+            style={{
+              background: buildLinearGradient({ config }),
+              opacity: state.latestMatchingQueriedData == undefined ? 0.5 : 1,
+              transform: config.reverseDirection ? "scaleX(-1)" : undefined,
+            }}
+          >
+            {Number.isFinite(scaledValue) && (
+              <div
+                className={classes.barOverlay}
+                style={{ width: `${(1 - scaledValue) * 100}%` }}
+              />
+            )}
+            {outOfBounds && (
+              <div
+                className={classes.barEdge}
+                style={rawValue < minValue ? { left: 0 } : { right: 0 }}
+              />
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={classes.root}>
       <div className={classes.gaugeContainer}>

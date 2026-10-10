@@ -26,6 +26,16 @@ export const gauge = {
     },
   },
   reverse: {
-    label: "Reverse",
+    label: "Reverse colors",
+  },
+  reverseDirection: {
+    label: "Reverse direction",
+  },
+  style: {
+    label: "Style",
+    options: {
+      dial: "Dial",
+      bar: "Bar",
+    },
   },
 };

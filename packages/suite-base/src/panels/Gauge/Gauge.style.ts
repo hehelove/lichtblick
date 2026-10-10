@@ -43,4 +43,26 @@ export const useStyles = makeStyles()(() => ({
     position: "absolute",
     transformOrigin: "bottom left",
   },
+  barContainer: {
+    width: "100%",
+  },
+  barTrack: {
+    height: 16,
+    position: "relative",
+    width: "100%",
+  },
+  barOverlay: {
+    backgroundColor: "rgba(127, 127, 127, 0.8)",
+    bottom: 0,
+    position: "absolute",
+    right: 0,
+    top: 0,
+  },
+  barEdge: {
+    backgroundColor: "orange",
+    bottom: 0,
+    position: "absolute",
+    top: 0,
+    width: 4,
+  },
 }));

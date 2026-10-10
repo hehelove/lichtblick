@@ -181,6 +181,45 @@ export const TooHigh: StoryObj = {
   parameters: { panelSetup: { fixture: makeFixture(2) } },
 };
 
+export const BarStyle: StoryObj = {
+  render: function Story() {
+    return (
+      <GaugePanel
+        overrideConfig={{
+          path: "/data.value",
+          minValue: 0,
+          maxValue: 1,
+          colorMode: "colormap",
+          colorMap: "rainbow",
+          style: "bar",
+        }}
+      />
+    );
+  },
+
+  parameters: { panelSetup: { fixture: makeFixture(0.3) } },
+};
+
+export const BarStyleReversedDirection: StoryObj = {
+  render: function Story() {
+    return (
+      <GaugePanel
+        overrideConfig={{
+          path: "/data.value",
+          minValue: 0,
+          maxValue: 1,
+          colorMode: "colormap",
+          colorMap: "rainbow",
+          style: "bar",
+          reverseDirection: true,
+        }}
+      />
+    );
+  },
+
+  parameters: { panelSetup: { fixture: makeFixture(0.3) } },
+};
+
 export const CustomRange: StoryObj = {
   render: function Story() {
     return <GaugePanel overrideConfig={{ path: "/data.value", minValue: 5, maxValue: 7 }} />;

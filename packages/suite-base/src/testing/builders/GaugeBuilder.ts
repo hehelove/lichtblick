@@ -5,6 +5,7 @@ import {
   ColorMapConfig,
   ColorModeConfig,
   GaugeConfig,
+  GaugeStyleConfig,
 } from "@lichtblick/suite-base/panels/Gauge/types";
 import { BasicBuilder, defaults } from "@lichtblick/test-builders";
 
@@ -18,6 +19,8 @@ export default class GaugeBuilder {
       minValue: BasicBuilder.number(),
       path: BasicBuilder.string(),
       reverse: BasicBuilder.boolean(),
+      reverseDirection: BasicBuilder.boolean(),
+      style: BasicBuilder.sample(GaugeStyleConfig),
     });
   }
 }

@@ -86,6 +86,15 @@ describe("settingsActionReducer", () => {
     expect((result as any)[path[1]!]).toBe(value);
   });
 
+  it("should update style when path is ['general', 'style']", () => {
+    const action = buildUpdateAction({ path: ["general", "style"], value: "bar" });
+    const { props } = setup({ action });
+
+    const result = settingsActionReducer(props);
+
+    expect(result.style).toBe("bar");
+  });
+
   it("should throw an error for an unexpected path[0]", () => {
     const action = buildUpdateAction();
     const { props } = setup({ action });

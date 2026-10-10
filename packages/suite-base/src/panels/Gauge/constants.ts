@@ -6,6 +6,7 @@ import {
   ColorModeConfig,
   ColorStops,
   GaugeConfig,
+  GaugeStyleConfig,
 } from "@lichtblick/suite-base/panels/Gauge/types";
 
 export const DATA_TYPES = [
@@ -28,6 +29,8 @@ export const DEFAULT_CONFIG: GaugeConfig = {
   minValue: 0,
   path: "",
   reverse: false,
+  reverseDirection: false,
+  style: GaugeStyleConfig.DIAL,
 };
 
 export const COLOR_MAPS: Record<ColorMapConfig | ColorModeConfig, ColorStops[]> = {
