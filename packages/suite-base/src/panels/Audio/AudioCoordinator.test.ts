@@ -50,7 +50,7 @@ const chunkA = pcmChunk(); // 1s of audio
 const chunkB = pcmChunk();
 const buffers: CoordinatorBuffer[] = [
   { startSec: 0, durationSec: 1, buffer: chunkA },
-  { startSec: 100, durationSec: 1, buffer: chunkB },
+  { startSec: 200, durationSec: 1, buffer: chunkB }, // beyond the schedule-ahead window
 ];
 
 describe("AudioCoordinator", () => {
@@ -91,6 +91,31 @@ describe("AudioCoordinator", () => {
     coordinator.sync({ currentTime: { sec: 50, nsec: 0 }, isPlaying: true, speed: 1 });
     expect(sources[0]!.stop).toHaveBeenCalled();
     expect(sources).toHaveLength(1); // only the stopped one; nothing overlaps 50s
+    coordinator.dispose();
+  });
+
+  it("schedules the full panel supply window so continuous playback never runs into silence", () => {
+    // Regression: sync() only reschedules on discontinuities, so a schedule-ahead window smaller
+    // than the panel's supply window ([playhead-5, playhead+120]) left the second minute of audio
+    // unqueued and playback went silent on/off in 30s duty cycles.
+    const { ctx, sources } = makeFakeContext();
+    const nowSpy = jest.spyOn(performance, "now").mockReturnValue(0);
+    const coordinator = new AudioCoordinator({ audioContextFactory: () => ctx as unknown as AudioContext });
+    const supply: CoordinatorBuffer[] = [
+      { startSec: 0, durationSec: 1, buffer: chunkA },
+      { startSec: 100, durationSec: 1, buffer: pcmChunk() },
+    ];
+    coordinator.setBuffers(supply);
+    coordinator.sync({ currentTime: { sec: 0, nsec: 0 }, isPlaying: true, speed: 1 });
+    expect(sources).toHaveLength(2); // both chunks within the window are queued up front
+
+    // 35s of continuous playback (wall clock tracks playhead): no discontinuity, no reschedule —
+    // the 100s chunk must already be scheduled, or audio stops at the 30s mark.
+    nowSpy.mockReturnValue(35_000);
+    coordinator.sync({ currentTime: { sec: 35, nsec: 0 }, isPlaying: true, speed: 1 });
+    expect(sources.filter((source) => source.start.mock.calls.length === 0)).toHaveLength(0);
+    expect(sources.every((source) => source.stop.mock.calls.length === 0)).toBe(true);
+    nowSpy.mockRestore();
     coordinator.dispose();
   });
 

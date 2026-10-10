@@ -22,8 +22,12 @@ export type CoordinatorSyncState = {
   speed: number;
 };
 
-/** How far ahead of the playhead buffers are scheduled. */
-const SCHEDULE_AHEAD_SEC = 30;
+/**
+ * How far ahead of the playhead buffers are scheduled. Must cover the panel's supply window
+ * (PLAYBACK_AHEAD_SEC + margin): sync() only reschedules on discontinuities, so continuous
+ * playback relies on the initial setBuffers() having scheduled everything up ahead.
+ */
+const SCHEDULE_AHEAD_SEC = 130;
 /** Playhead drift (seconds) beyond which a seek discontinuity is assumed. */
 const SEEK_THRESHOLD_SEC = 0.05;
 

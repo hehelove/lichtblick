@@ -112,6 +112,13 @@ export class CompressedAudioDecoder {
       );
     }
 
+    if (this.decoder?.state === "closed") {
+      // A fatal error auto-closed the decoder; rebuild it so one bad chunk doesn't poison every
+      // later chunk of this format for the panel's lifetime.
+      this.decoder = undefined;
+      this.configured = false;
+      this.pendingError = undefined;
+    }
     this.decoder ??= new AudioDecoder({ output: this.handleOutput, error: this.handleError });
     if (!this.configured) {
       // foxglove.CompressedAudio carries no sample_rate/channels; opus signals both in-band, so
@@ -122,9 +129,6 @@ export class CompressedAudioDecoder {
         numberOfChannels: 1,
       });
       this.configured = true;
-    }
-    if (this.decoder.state === "closed") {
-      throw new Error(`AudioDecoder for ${this.format} is closed`);
     }
     const existingError = this.readError();
     if (existingError != undefined) {

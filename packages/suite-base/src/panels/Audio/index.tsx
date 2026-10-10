@@ -121,19 +121,23 @@ const AudioPanel = React.memo(({ config, saveConfig }: Props) => {
   );
   const topicName = config.topicToRender ?? availableTopics[0]?.name;
 
-  // Live rolling window: always available, and the only source for live connections where the
-  // player cannot serve batch iterators.
-  const liveByTopic = useMessagesByTopic({
-    topics: topicName != undefined ? [topicName] : EMPTY_TOPICS,
-    historySize: 100000,
-  }) as { [topic: string]: AudioMessageEvent[] };
-
   // Full history when the source supports batch iteration; stays undefined (live fallback)
   // when onNewRangeIterator never fires.
   const subscribeMessageRange = useSubscribeMessageRange();
   const [rangeMessages, setRangeMessages] = useState<
     AudioMessageEvent[] | undefined
   >();
+
+  // Live rolling window: the only source for live connections where the player cannot serve
+  // batch iterators. Unsubscribes once batch mode supplies the full history, so the pipeline
+  // doesn't keep a second rolling buffer of parsed messages alive.
+  const liveByTopic = useMessagesByTopic({
+    topics:
+      topicName != undefined && rangeMessages == undefined
+        ? [topicName]
+        : EMPTY_TOPICS,
+    historySize: 100000,
+  }) as { [topic: string]: AudioMessageEvent[] };
   useEffect(() => {
     if (topicName == undefined) {
       return;
@@ -170,6 +174,9 @@ const AudioPanel = React.memo(({ config, saveConfig }: Props) => {
         clearTimeout(flushTimer);
       }
       cancel();
+      // Don't keep rendering the previous topic's waveform if the new topic's iterator never
+      // fires (e.g. a live source).
+      setRangeMessages(undefined);
     };
   }, [topicName, subscribeMessageRange]);
 
@@ -191,6 +198,7 @@ const AudioPanel = React.memo(({ config, saveConfig }: Props) => {
 
   useEffect(() => {
     let cancelled: boolean = false;
+    let lastEmitMs = performance.now();
     const run = async () => {
       const store = compressedRef.current;
       for (const msgEvent of messages) {
@@ -232,6 +240,24 @@ const AudioPanel = React.memo(({ config, saveConfig }: Props) => {
           channels: [Int16Array.from(entry.samples.slice(startLength))],
           sampleRate: entry.sampleRate ?? 48000,
         });
+        // This chunk's frames are flushed into `pending`; drop them from the accumulator so it
+        // doesn't grow with the whole recording.
+        entry.samples.length = 0;
+        while (store.pending.size > MAX_DECODE_CACHE) {
+          const oldest = store.pending.keys().next().value;
+          if (oldest == undefined) {
+            break;
+          }
+          store.pending.delete(oldest);
+        }
+        // Throttle state updates: each one recomputes the decode memo and rescans every sample
+        // for the canvas, so per-chunk emission is quadratic on long recordings.
+        if (performance.now() - lastEmitMs >= 250) {
+          lastEmitMs = performance.now();
+          setCompressedPcm(new Map(store.pending));
+        }
+      }
+      if (!cancelled && store.pending.size > 0) {
         setCompressedPcm(new Map(store.pending));
       }
     };
