@@ -713,11 +713,17 @@ function PanelExtensionAdapter(
 
       /** @deprecated Renamed to `subscribeMessageRange`. Please use that method instead. */
       unstable_subscribeMessageRange(args) {
+        if (!isMounted()) {
+          return () => {};
+        }
         return subscribeMessageRange(args);
       },
 
       /** @deprecated Renamed to `subscribeMessageRange`. Please use that method instead. */
       UNSTABLE_subscribeMessageRange(args) {
+        if (!isMounted()) {
+          return () => {};
+        }
         return subscribeMessageRange(args);
       },
 
