@@ -43,6 +43,16 @@ export type LocalEventArgs = {
 // jsdom has no stable crypto.randomUUID — a module counter keeps ids unique per session.
 let nextLocalEventId = 0;
 
+// Same semantics as XsEvalEventsBridge's ?xsEvents= check: non-empty URL means the eval
+// bridge owns eventsSupported, and its effect won't re-run to restore a clobbered value.
+function hasXsEventsUrl(): boolean {
+  try {
+    return Boolean(new URLSearchParams(window.location.search).get("xsEvents"));
+  } catch {
+    return false;
+  }
+}
+
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
 }
@@ -122,7 +132,10 @@ export function XsLocalEventsProvider({ children }: { children?: React.ReactNode
       setDeviceId("local");
     } else if (setByLocalRef.current) {
       setByLocalRef.current = false;
-      setEventsSupported(false);
+      // ?xsEvents= 评测桥持有 eventsSupported 且其 effect 不会重跑，本地 reset 只清自己的 device。
+      if (!hasXsEventsUrl()) {
+        setEventsSupported(false);
+      }
       setDeviceId(undefined);
     }
   }, [startTime, setEventsSupported, setDeviceId]);

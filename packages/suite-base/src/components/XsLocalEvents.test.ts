@@ -243,6 +243,30 @@ describe("XsLocalEventsProvider", () => {
     expect(captured.store?.getState().deviceId).toBeUndefined();
   });
 
+  it("keeps ?xsEvents= support when a local timeline disappears (eval bridge owns it)", async () => {
+    window.history.pushState({}, "", "?xsEvents=http://eval/events");
+    try {
+      const captured: Captured = {};
+      const { rerender } = render(tree(captured));
+
+      await waitFor(() => {
+        expect(captured.store?.getState().eventsSupported).toBe(true);
+      });
+      expect(captured.store?.getState().deviceId).toBe("local");
+
+      mockPipelineContext.current = { playerState: { activeData: undefined } };
+      rerender(tree(captured));
+
+      // deviceId clears, but the eval bridge's supported=true must survive the local reset.
+      await waitFor(() => {
+        expect(captured.store?.getState().deviceId).toBeUndefined();
+      });
+      expect(captured.store?.getState().eventsSupported).toBe(true);
+    } finally {
+      window.history.pushState({}, "", "/");
+    }
+  });
+
   it("does not clobber externally-provided events support without a timeline", () => {
     mockPipelineContext.current = { playerState: { activeData: undefined } };
     const captured: Captured = {};
