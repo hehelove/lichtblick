@@ -487,7 +487,7 @@ describe("TimestampDatasetsBuilder", () => {
           {
             topic: "/foo",
             schemaName: "foo",
-            receiveTime: { sec: 2, nsec: 0 },
+            receiveTime: { sec: 3, nsec: 0 },
             sizeInBytes: 0,
             message: { val: 6 },
           },
@@ -506,10 +506,91 @@ describe("TimestampDatasetsBuilder", () => {
         expect.objectContaining({
           // t=0 has no previous value to diff against so its delta is NaN; the
           // following datums are each diffed against the previous raw value.
+          // Non-uniform spacing (0/1/3) so delta ≠ derivative: dividing by
+          // Δt here would yield 1.5 instead of 3 and fail the assertion.
           data: [
             { x: 0, y: NaN, value: null },
             { x: 1, y: 2, value: 2 },
-            { x: 2, y: 3, value: 3 },
+            { x: 3, y: 3, value: 3 },
+          ],
+        }),
+      ],
+    });
+  });
+
+  it("resets the delta segment after a gap instead of computing across it", async () => {
+    const builder = new TimestampDatasetsBuilder();
+
+    builder.setSeries(
+      buildSeriesItems([
+        {
+          enabled: true,
+          timestampMethod: "receiveTime",
+          value: "/foo.val.@delta",
+        },
+      ]),
+    );
+
+    builder.handlePlayerState(
+      buildPlayerState({
+        messages: [
+          {
+            topic: "/foo",
+            schemaName: "foo",
+            receiveTime: { sec: 0, nsec: 0 },
+            sizeInBytes: 0,
+            message: { val: 0 },
+          },
+          {
+            topic: "/foo",
+            schemaName: "foo",
+            receiveTime: { sec: 1, nsec: 0 },
+            sizeInBytes: 0,
+            message: { val: 1 },
+          },
+          {
+            topic: "/foo",
+            schemaName: "foo",
+            receiveTime: { sec: 2, nsec: 0 },
+            sizeInBytes: 0,
+            message: { val: null },
+          },
+          {
+            topic: "/foo",
+            schemaName: "foo",
+            receiveTime: { sec: 3, nsec: 0 },
+            sizeInBytes: 0,
+            message: { val: 5 },
+          },
+          {
+            topic: "/foo",
+            schemaName: "foo",
+            receiveTime: { sec: 4, nsec: 0 },
+            sizeInBytes: 0,
+            message: { val: 7 },
+          },
+        ],
+      }),
+    );
+
+    await expect(
+      builder.getViewportDatasets({
+        size: { width: 1_000, height: 1_000 },
+        bounds: {},
+      }),
+    ).resolves.toEqual({
+      pathsWithMismatchedDataLengths: new Set(),
+      datasetsByConfigIndex: [
+        expect.objectContaining({
+          // Unlike derivative, delta keeps its first datum as NaN. The gap at
+          // t=2 and the first datum after it (t=3) have nothing valid to diff
+          // against, so both come out as NaN/null; t=4 resumes normally.
+          data: [
+            { x: 0, y: NaN, value: null },
+            { x: 1, y: 1, value: 1 },
+            { x: 2, y: NaN, value: null },
+            { x: 3, y: NaN, value: null },
+            { x: 4, y: 2, value: 2 },
           ],
         }),
       ],
