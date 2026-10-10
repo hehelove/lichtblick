@@ -16,6 +16,7 @@ export * from "./general";
 export * from "./httpErrors";
 export * from "./incompatibleLayoutVersion";
 export * from "./log";
+export * from "./map";
 export * from "./openDialog";
 export * from "./panelConfigVersionGuard";
 export * from "./panels";

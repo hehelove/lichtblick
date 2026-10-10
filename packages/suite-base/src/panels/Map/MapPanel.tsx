@@ -19,6 +19,7 @@ import {
 } from "leaflet";
 import * as _ from "lodash-es";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useResizeDetector } from "react-resize-detector";
 import { useDebouncedCallback } from "use-debounce";
 
@@ -55,6 +56,7 @@ type MapPanelProps = {
 
 function MapPanel(props: MapPanelProps): React.JSX.Element {
   const { context } = props;
+  const { t } = useTranslation("map");
   const [colorScheme, setColorScheme] = useState<"dark" | "light">("light");
 
   const mapContainerRef = useRef<HTMLDivElement>(ReactNull);
@@ -96,6 +98,26 @@ function MapPanel(props: MapPanelProps): React.JSX.Element {
   const [customLayer] = useState(
     new TileLayer("https://example.com/{z}/{y}/{x}", {
       attribution: "",
+      maxNativeZoom: 18,
+      maxZoom: 24,
+    }),
+  );
+
+  // GEBCO serves shaded-relief bathymetry via WMS (no XYZ tile endpoint is published)
+  const [terrainLayer] = useState(
+    new TileLayer.WMS("https://wms.gebco.net/mapserv", {
+      attribution: "GEBCO Compilation Group (2024) GEBCO 2024 Grid",
+      layers: "GEBCO_LATEST",
+      format: "image/png",
+      maxNativeZoom: 18,
+      maxZoom: 24,
+    }),
+  );
+
+  // OpenSeaMap only provides seamarks (no basemap); rendered over the OSM street layer
+  const [nauticalLayer] = useState(
+    new TileLayer("https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png", {
+      attribution: "&copy; OpenSeaMap contributors",
       maxNativeZoom: 18,
       maxZoom: 24,
     }),
@@ -243,17 +265,44 @@ function MapPanel(props: MapPanelProps): React.JSX.Element {
     if (config.layer === "map") {
       currentMap?.addLayer(tileLayer);
       currentMap?.removeLayer(satelliteLayer);
+      currentMap?.removeLayer(terrainLayer);
+      currentMap?.removeLayer(nauticalLayer);
       currentMap?.removeLayer(customLayer);
     } else if (config.layer === "satellite") {
       currentMap?.addLayer(satelliteLayer);
       currentMap?.removeLayer(tileLayer);
+      currentMap?.removeLayer(terrainLayer);
+      currentMap?.removeLayer(nauticalLayer);
+      currentMap?.removeLayer(customLayer);
+    } else if (config.layer === "terrain") {
+      currentMap?.addLayer(terrainLayer);
+      currentMap?.removeLayer(tileLayer);
+      currentMap?.removeLayer(satelliteLayer);
+      currentMap?.removeLayer(nauticalLayer);
+      currentMap?.removeLayer(customLayer);
+    } else if (config.layer === "nautical") {
+      // Seamarks have no basemap of their own; add the OSM street layer below the seamarks.
+      currentMap?.addLayer(tileLayer);
+      currentMap?.addLayer(nauticalLayer);
+      currentMap?.removeLayer(satelliteLayer);
+      currentMap?.removeLayer(terrainLayer);
       currentMap?.removeLayer(customLayer);
     } else if (config.layer === "custom") {
       currentMap?.addLayer(customLayer);
       currentMap?.removeLayer(tileLayer);
       currentMap?.removeLayer(satelliteLayer);
+      currentMap?.removeLayer(terrainLayer);
+      currentMap?.removeLayer(nauticalLayer);
     }
-  }, [config.layer, currentMap, customLayer, satelliteLayer, tileLayer]);
+  }, [
+    config.layer,
+    currentMap,
+    customLayer,
+    nauticalLayer,
+    satelliteLayer,
+    terrainLayer,
+    tileLayer,
+  ]);
 
   useEffect(() => {
     if (config.layer === "custom") {
@@ -290,7 +339,7 @@ function MapPanel(props: MapPanelProps): React.JSX.Element {
 
     context.subscribe(subscriptions);
 
-    const tree = buildSettingsTree(config, eligibleTopics);
+    const tree = buildSettingsTree(config, eligibleTopics, t);
     context.updatePanelSettingsEditor({
       actionHandler: settingsActionHandler,
       nodes: tree,
@@ -299,7 +348,7 @@ function MapPanel(props: MapPanelProps): React.JSX.Element {
     return () => {
       context.unsubscribeAll();
     };
-  }, [config, context, eligibleTopics, settingsActionHandler]);
+  }, [config, context, eligibleTopics, settingsActionHandler, t]);
 
   // Subscribe to eligible and enabled topics for range messages
   useLayoutEffect(() => {
