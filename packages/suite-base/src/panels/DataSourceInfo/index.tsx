@@ -6,6 +6,7 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/
 
 import { Divider, Typography } from "@mui/material";
+import { useTranslation } from "react-i18next";
 import { makeStyles } from "tss-react/mui";
 
 import CopyButton from "@lichtblick/suite-base/components/CopyButton";
@@ -44,6 +45,17 @@ const useStyles = makeStyles<void, "copyIcon">()((theme, _params, classes) => ({
       "&:hover": {
         backgroundColor: theme.palette.background.paper,
       },
+    },
+
+    metadataSection: {
+      padding: theme.spacing(1, 1.5),
+    },
+
+    metadataJson: {
+      display: "block",
+      fontFamily: "monospace",
+      whiteSpace: "pre-wrap",
+      wordBreak: "break-all",
     },
 
     th: {
@@ -115,15 +127,19 @@ function TopicRow({ topic }: { topic: Topic }): React.JSX.Element {
 const selectSortedTopics = (ctx: MessagePipelineContext) => ctx.sortedTopics;
 const selectStartTime = (ctx: MessagePipelineContext) => ctx.playerState.activeData?.startTime;
 const selectEndTime = (ctx: MessagePipelineContext) => ctx.playerState.activeData?.endTime;
+const selectGetMetadata = (ctx: MessagePipelineContext) => ctx.getMetadata;
 
 const MemoTopicRow = React.memo(TopicRow);
 
 function SourceInfo(): React.JSX.Element {
   const { classes } = useStyles();
+  const { t } = useTranslation("dataSourceInfo");
 
   const topics = useMessagePipeline(selectSortedTopics);
   const startTime = useMessagePipeline(selectStartTime);
   const endTime = useMessagePipeline(selectEndTime);
+  const getMetadata = useMessagePipeline(selectGetMetadata);
+  const metadata = getMetadata();
 
   if (!startTime || !endTime) {
     return (
@@ -154,6 +170,23 @@ function SourceInfo(): React.JSX.Element {
             ))}
           </tbody>
         </table>
+        {metadata.length > 0 && (
+          <details className={classes.metadataSection}>
+            <summary>
+              <Typography component="span" variant="overline">
+                {t("metadataRecords")}
+              </Typography>
+            </summary>
+            {metadata.map((record, index) => (
+              <div key={`${record.name}-${index}`}>
+                <Typography variant="body2">{record.name}</Typography>
+                <span className={classes.metadataJson}>
+                  {JSON.stringify(record.metadata)}
+                </span>
+              </div>
+            ))}
+          </details>
+        )}
         <DirectTopicStatsUpdater interval={6} />
       </Stack>
     </>
