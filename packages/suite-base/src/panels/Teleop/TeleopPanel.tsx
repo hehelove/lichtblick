@@ -21,6 +21,72 @@ import {
 } from "@lichtblick/suite-base/panels/Teleop/types";
 import ThemeProvider from "@lichtblick/suite-base/theme/ThemeProvider";
 
+type TwistMessage = {
+  linear: { x: number; y: number; z: number };
+  angular: { x: number; y: number; z: number };
+};
+
+// Builds a Twist message from a zero basis, injecting the configured field value for the action.
+// For STOP the default stopButton config (value 0) yields an all-zero Twist.
+function buildTwistMessage(config: TeleopConfig, action: DirectionalPadAction): TwistMessage {
+  const message: TwistMessage = {
+    linear: {
+      x: 0,
+      y: 0,
+      z: 0,
+    },
+    angular: {
+      x: 0,
+      y: 0,
+      z: 0,
+    },
+  };
+
+  function setFieldValue(field: string, value: number) {
+    switch (field) {
+      case "linear-x":
+        message.linear.x = value;
+        break;
+      case "linear-y":
+        message.linear.y = value;
+        break;
+      case "linear-z":
+        message.linear.z = value;
+        break;
+      case "angular-x":
+        message.angular.x = value;
+        break;
+      case "angular-y":
+        message.angular.y = value;
+        break;
+      case "angular-z":
+        message.angular.z = value;
+        break;
+    }
+  }
+
+  switch (action) {
+    case DirectionalPadAction.UP:
+      setFieldValue(config.upButton.field, config.upButton.value);
+      break;
+    case DirectionalPadAction.DOWN:
+      setFieldValue(config.downButton.field, config.downButton.value);
+      break;
+    case DirectionalPadAction.LEFT:
+      setFieldValue(config.leftButton.field, config.leftButton.value);
+      break;
+    case DirectionalPadAction.RIGHT:
+      setFieldValue(config.rightButton.field, config.rightButton.value);
+      break;
+    case DirectionalPadAction.STOP:
+      setFieldValue(config.stopButton.field, config.stopButton.value);
+      break;
+    default:
+  }
+
+  return message;
+}
+
 function TeleopPanel(props: Readonly<TeleopPanelProps>): React.JSX.Element {
   const { context } = props;
   const { saveState } = context;
@@ -39,6 +105,8 @@ function TeleopPanel(props: Readonly<TeleopPanelProps>): React.JSX.Element {
       downButton: { field: downField = "linear-x", value: downValue = -1 } = {},
       leftButton: { field: leftField = "angular-z", value: leftValue = 1 } = {},
       rightButton: { field: rightField = "angular-z", value: rightValue = -1 } = {},
+      stopButton: { field: stopField = "linear-x", value: stopValue = 0 } = {},
+      autoSendStopOnRelease = false,
     } = partialConfig;
 
     return {
@@ -48,6 +116,8 @@ function TeleopPanel(props: Readonly<TeleopPanelProps>): React.JSX.Element {
       downButton: { field: downField, value: downValue },
       leftButton: { field: leftField, value: leftValue },
       rightButton: { field: rightField, value: rightValue },
+      stopButton: { field: stopField, value: stopValue },
+      autoSendStopOnRelease,
     };
   });
 
@@ -116,57 +186,7 @@ function TeleopPanel(props: Readonly<TeleopPanelProps>): React.JSX.Element {
       return;
     }
 
-    const message = {
-      linear: {
-        x: 0,
-        y: 0,
-        z: 0,
-      },
-      angular: {
-        x: 0,
-        y: 0,
-        z: 0,
-      },
-    };
-
-    function setFieldValue(field: string, value: number) {
-      switch (field) {
-        case "linear-x":
-          message.linear.x = value;
-          break;
-        case "linear-y":
-          message.linear.y = value;
-          break;
-        case "linear-z":
-          message.linear.z = value;
-          break;
-        case "angular-x":
-          message.angular.x = value;
-          break;
-        case "angular-y":
-          message.angular.y = value;
-          break;
-        case "angular-z":
-          message.angular.z = value;
-          break;
-      }
-    }
-
-    switch (currentAction) {
-      case DirectionalPadAction.UP:
-        setFieldValue(config.upButton.field, config.upButton.value);
-        break;
-      case DirectionalPadAction.DOWN:
-        setFieldValue(config.downButton.field, config.downButton.value);
-        break;
-      case DirectionalPadAction.LEFT:
-        setFieldValue(config.leftButton.field, config.leftButton.value);
-        break;
-      case DirectionalPadAction.RIGHT:
-        setFieldValue(config.rightButton.field, config.rightButton.value);
-        break;
-      default:
-    }
+    const message = buildTwistMessage(config, currentAction);
 
     // don't publish if rate is 0 or negative - this is a config error on user's part
     if (config.publishRate <= 0) {
@@ -183,6 +203,12 @@ function TeleopPanel(props: Readonly<TeleopPanelProps>): React.JSX.Element {
 
     publishMessage();
 
+    // The stop command is published exactly once per press; directional buttons
+    // keep publishing at the configured rate while held.
+    if (currentAction === DirectionalPadAction.STOP) {
+      return;
+    }
+
     const intervalMs = (1000 * 1) / config.publishRate;
     const intervalHandle = setInterval(publishMessage, intervalMs);
 
@@ -190,6 +216,33 @@ function TeleopPanel(props: Readonly<TeleopPanelProps>): React.JSX.Element {
       clearInterval(intervalHandle);
     };
   }, [context, config, currentTopic, currentAction]);
+
+  // When stop-on-release is enabled, publish the configured stop message once when a
+  // directional button is released. The prev-action ref guards against firing on
+  // initial mount and after releasing the stop button itself (it already sent stop).
+  const prevActionRef = useRef<DirectionalPadAction | undefined>(undefined);
+  useLayoutEffect(() => {
+    const prevAction = prevActionRef.current;
+    prevActionRef.current = currentAction;
+
+    if (
+      currentAction != undefined ||
+      prevAction == undefined ||
+      prevAction === DirectionalPadAction.STOP ||
+      !config.autoSendStopOnRelease ||
+      !currentTopic ||
+      context.publish == undefined ||
+      config.publishRate <= 0
+    ) {
+      return;
+    }
+
+    try {
+      context.publish(currentTopic, buildTwistMessage(config, DirectionalPadAction.STOP));
+    } catch (error) {
+      console.error("Failed to publish message:", error);
+    }
+  }, [config, context, currentTopic, currentAction]);
 
   useLayoutEffect(() => {
     renderDone();

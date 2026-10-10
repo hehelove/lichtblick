@@ -24,6 +24,8 @@ function MockDirectionalPad({ onAction, disabled }: DirectionalPadProps): React.
       <button onClick={() => onAction?.(DirectionalPadAction.DOWN)}>DOWN</button>
       <button onClick={() => onAction?.(DirectionalPadAction.LEFT)}>LEFT</button>
       <button onClick={() => onAction?.(DirectionalPadAction.RIGHT)}>RIGHT</button>
+      <button onClick={() => onAction?.(DirectionalPadAction.STOP)}>STOP</button>
+      <button onClick={() => onAction?.()}>RELEASE</button>
     </div>
   );
 }
@@ -226,6 +228,8 @@ describe("TeleopPanel", () => {
       downButton: { field: "linear-x", value: -1 },
       leftButton: { field: "angular-z", value: 1 },
       rightButton: { field: "angular-z", value: -1 },
+      stopButton: { field: "linear-x", value: 0 },
+      autoSendStopOnRelease: false,
     };
     const topics = [
       PlayerBuilder.topic({ schemaName: "geometry_msgs/Twist" }),
@@ -258,6 +262,8 @@ describe("TeleopPanel", () => {
           downButton: { field: "linear-x", value: -2.0 },
           leftButton: { field: "angular-z", value: 1.5 },
           rightButton: { field: "angular-z", value: -1.5 },
+          stopButton: { field: "linear-x", value: 0 },
+          autoSendStopOnRelease: false,
           ...buttonConfig,
         };
 
@@ -564,6 +570,123 @@ describe("TeleopPanel", () => {
 
           // Then
           expect(publish).toHaveBeenCalledTimes(3); // Initial + two intervals
+        });
+      });
+
+      describe("When STOP action is triggered", () => {
+        it("Then should publish the stop message exactly once and not repeat on interval", () => {
+          // Given
+          const { context, publish } = setupTestEnvironment();
+
+          // When
+          render(<TeleopPanel context={context} />);
+          fireEvent.click(screen.getByText("STOP"));
+          jest.advanceTimersByTime(1000);
+
+          // Then
+          expect(publish).toHaveBeenCalledTimes(1);
+          expect(publish).toHaveBeenCalledWith(
+            "test/cmd_vel",
+            expect.objectContaining({
+              linear: expect.objectContaining({ x: 0, y: 0, z: 0 }),
+              angular: expect.objectContaining({ x: 0, y: 0, z: 0 }),
+            }),
+          );
+        });
+
+        it("Then should publish the configured stopButton field and value", () => {
+          // Given
+          const { context, publish } = setupTestEnvironment({
+            stopButton: { field: "angular-z", value: 0.5 },
+          });
+
+          // When
+          render(<TeleopPanel context={context} />);
+          fireEvent.click(screen.getByText("STOP"));
+
+          // Then
+          expect(publish).toHaveBeenCalledTimes(1);
+          expect(publish).toHaveBeenCalledWith(
+            "test/cmd_vel",
+            expect.objectContaining({
+              linear: expect.objectContaining({ x: 0, y: 0, z: 0 }),
+              angular: expect.objectContaining({ x: 0, y: 0, z: 0.5 }),
+            }),
+          );
+        });
+      });
+
+      describe("When a directional button is released with autoSendStopOnRelease enabled", () => {
+        it("Then should publish the stop message as the last message after release", () => {
+          // Given
+          const { context, publish } = setupTestEnvironment({
+            autoSendStopOnRelease: true,
+            stopButton: { field: "angular-z", value: 2.5 },
+          });
+
+          // When
+          render(<TeleopPanel context={context} />);
+          fireEvent.click(screen.getByText("UP"));
+          jest.runOnlyPendingTimers();
+          publish.mockClear();
+          fireEvent.click(screen.getByText("RELEASE"));
+
+          // Then
+          expect(publish).toHaveBeenCalledTimes(1);
+          expect(publish).toHaveBeenCalledWith(
+            "test/cmd_vel",
+            expect.objectContaining({
+              linear: expect.objectContaining({ x: 0, y: 0, z: 0 }),
+              angular: expect.objectContaining({ x: 0, y: 0, z: 2.5 }),
+            }),
+          );
+        });
+
+        it("Then should not publish an additional stop message after releasing STOP", () => {
+          // Given
+          const { context, publish } = setupTestEnvironment({
+            autoSendStopOnRelease: true,
+          });
+
+          // When
+          render(<TeleopPanel context={context} />);
+          fireEvent.click(screen.getByText("STOP"));
+          expect(publish).toHaveBeenCalledTimes(1);
+          publish.mockClear();
+          fireEvent.click(screen.getByText("RELEASE"));
+
+          // Then
+          expect(publish).not.toHaveBeenCalled();
+        });
+
+        it("Then should not publish on initial mount", () => {
+          // Given
+          const { context, publish } = setupTestEnvironment({
+            autoSendStopOnRelease: true,
+          });
+
+          // When
+          render(<TeleopPanel context={context} />);
+
+          // Then
+          expect(publish).not.toHaveBeenCalled();
+        });
+      });
+
+      describe("When a directional button is released with autoSendStopOnRelease disabled", () => {
+        it("Then should not publish an additional message after release (official default)", () => {
+          // Given
+          const { context, publish } = setupTestEnvironment();
+
+          // When
+          render(<TeleopPanel context={context} />);
+          fireEvent.click(screen.getByText("UP"));
+          jest.runOnlyPendingTimers();
+          publish.mockClear();
+          fireEvent.click(screen.getByText("RELEASE"));
+
+          // Then
+          expect(publish).not.toHaveBeenCalled();
         });
       });
     });
