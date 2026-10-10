@@ -86,30 +86,45 @@ export async function finishVideoExport(deps: FinishDeps): Promise<void> {
     return;
   }
   session.phase = "stopping";
-  deps.pausePlayback?.();
   try {
-    const { blob, mimeType } = await session.recorder.stop();
-    const extension = mimeType.startsWith("video/mp4") ? "mp4" : "webm";
-    downloadFiles([
-      {
-        blob,
-        fileName: `lichtblick-export-${session.startTime.sec}-${session.endTime.sec}.${extension}`,
-      },
-    ]);
-  } catch (error) {
-    sendNotification(
-      "Video export failed",
-      error instanceof Error ? error.message : String(error),
-      "app",
-      "error",
-    );
+    try {
+      deps.pausePlayback?.();
+      const { blob, mimeType } = await session.recorder.stop();
+      const extension = mimeType.startsWith("video/mp4") ? "mp4" : "webm";
+      // an abort while arming captured nothing — don't save an empty file
+      if (blob.size > 0) {
+        downloadFiles([
+          {
+            blob,
+            fileName: `lichtblick-export-${session.startTime.sec}-${session.endTime.sec}.${extension}`,
+          },
+        ]);
+      }
+    } catch (error) {
+      sendNotification(
+        "Video export failed",
+        error instanceof Error ? error.message : String(error),
+        "app",
+        "error",
+      );
+    }
+    try {
+      if (session.restoreSpeed != undefined) {
+        deps.setPlaybackSpeed?.(session.restoreSpeed);
+      }
+      deps.setRepeat(session.restoreRepeat);
+    } catch (error) {
+      sendNotification(
+        "Video export failed",
+        error instanceof Error ? error.message : String(error),
+        "app",
+        "error",
+      );
+    }
+  } finally {
+    activeSession = undefined;
+    emitSessionChange();
   }
-  if (session.restoreSpeed != undefined) {
-    deps.setPlaybackSpeed?.(session.restoreSpeed);
-  }
-  deps.setRepeat(session.restoreRepeat);
-  activeSession = undefined;
-  emitSessionChange();
 }
 
 function activeDataSelector(ctx: MessagePipelineContext) {

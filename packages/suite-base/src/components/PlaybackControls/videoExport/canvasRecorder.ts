@@ -75,26 +75,49 @@ export function createCanvasRecorder(
       }
     },
     async stop() {
+      const assemble = (): { blob: Blob; mimeType: string } => ({
+        blob: new Blob(chunks, { type: opts.mimeType }),
+        mimeType: opts.mimeType,
+      });
+      if (!started) {
+        // export was stopped before recording began (e.g. while waiting for the seek)
+        return assemble();
+      }
       return await new Promise<{ blob: Blob; mimeType: string }>(
         (resolve, reject) => {
-          if (!started) {
-            // export was stopped before recording began (e.g. while waiting for the seek)
-            resolve({
-              blob: new Blob(chunks, { type: opts.mimeType }),
-              mimeType: opts.mimeType,
-            });
-            return;
-          }
+          let settled = false;
+          // MediaRecorder occasionally fires neither onstop nor onerror (e.g. when the
+          // video track ends first); resolve with whatever was captured instead of hanging.
+          const watchdog = setTimeout(() => {
+            if (!settled) {
+              settled = true;
+              resolve(assemble());
+            }
+          }, 5000);
           recorder.onstop = () => {
-            resolve({
-              blob: new Blob(chunks, { type: opts.mimeType }),
-              mimeType: opts.mimeType,
-            });
+            if (!settled) {
+              settled = true;
+              clearTimeout(watchdog);
+              resolve(assemble());
+            }
           };
           recorder.onerror = (_event: Event) => {
-            reject(new Error("MediaRecorder failed during video export"));
+            if (!settled) {
+              settled = true;
+              clearTimeout(watchdog);
+              reject(new Error("MediaRecorder failed during video export"));
+            }
           };
-          recorder.stop();
+          try {
+            recorder.stop();
+          } catch {
+            // recorder already inactive — its chunks are final
+            if (!settled) {
+              settled = true;
+              clearTimeout(watchdog);
+              resolve(assemble());
+            }
+          }
         },
       );
     },

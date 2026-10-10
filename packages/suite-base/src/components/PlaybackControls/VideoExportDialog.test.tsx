@@ -16,6 +16,7 @@ import {
 } from "@lichtblick/suite-base/context/Workspace/WorkspaceContext";
 import { PlayerPresence } from "@lichtblick/suite-base/players/types";
 import { downloadFiles } from "@lichtblick/suite-base/util/download";
+import sendNotification from "@lichtblick/suite-base/util/sendNotification";
 
 import { VideoExportAdapter, finishVideoExport } from "./VideoExportAdapter";
 import { VideoExportDialog, canStartVideoExport } from "./VideoExportDialog";
@@ -274,12 +275,52 @@ describe("VideoExportDialog + VideoExportAdapter", () => {
       );
     });
     expect(FakeMediaRecorder.instances[0]?.state).toBe("recording");
+    FakeMediaRecorder.instances[0]?.emitChunk(new Blob(["x"]));
 
     await act(async () => {
       utils.unregister();
     });
     expect(pausePlayback).toHaveBeenCalled();
     expect(downloadFiles).toHaveBeenCalled();
+  });
+
+  it("skips the download when stopped before anything was captured", async () => {
+    const utils = setup();
+    await act(async () => {
+      fireEvent.click(utils.startButton());
+    });
+    // still arming — the seek back to the range start has not landed yet
+    await act(async () => {
+      fireEvent.click(utils.stopButton());
+    });
+    expect(downloadFiles).not.toHaveBeenCalled();
+    expect(utils.startButton().hasAttribute("disabled")).toBe(false);
+    act(() => {
+      utils.unregister();
+    });
+  });
+
+  it("clears the session even when pause/restore throw", async () => {
+    const utils = setup();
+    await act(async () => {
+      fireEvent.click(utils.startButton());
+    });
+    const boom = () => {
+      throw new Error("boom");
+    };
+    await act(async () => {
+      await finishVideoExport({
+        pausePlayback: boom,
+        setPlaybackSpeed: undefined,
+        setRepeat: boom,
+      });
+    });
+    // session cleared in the finally block — the dialog returns to its idle state
+    expect(utils.startButton().hasAttribute("disabled")).toBe(false);
+    sendNotification.expectCalledDuringTest();
+    act(() => {
+      utils.unregister();
+    });
   });
 
   it("disables Start when presence is ERROR", () => {

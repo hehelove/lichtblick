@@ -154,4 +154,46 @@ describe("createCanvasRecorder", () => {
     expect(blob.size).toBe(0);
     expect(mimeType).toBe("video/webm;codecs=vp9");
   });
+
+  it("resolves via the watchdog with captured chunks when onstop never fires", async () => {
+    jest.useFakeTimers();
+    try {
+      const canvas = document.createElement("canvas");
+      const rec = createCanvasRecorder(canvas, {
+        fps: 30,
+        mimeType: "video/webm;codecs=vp9",
+      });
+      rec.start();
+      const fakeRecorder = FakeMediaRecorder.instances[0]!;
+      fakeRecorder.emitChunk(new Blob(["x"]));
+      fakeRecorder.stop = () => {
+        fakeRecorder.state = "inactive"; // deliberately never calls onstop
+      };
+
+      const pending = rec.stop().then(({ blob }) => {
+        expect(blob.size).toBe(1);
+      });
+      await jest.advanceTimersByTimeAsync(5000);
+      await pending;
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("resolves when stop() throws because the recorder is already inactive", async () => {
+    const canvas = document.createElement("canvas");
+    const rec = createCanvasRecorder(canvas, {
+      fps: 30,
+      mimeType: "video/webm;codecs=vp9",
+    });
+    rec.start();
+    const fakeRecorder = FakeMediaRecorder.instances[0]!;
+    fakeRecorder.emitChunk(new Blob(["x"]));
+    fakeRecorder.stop = () => {
+      throw new Error("InvalidStateError");
+    };
+
+    const { blob } = await rec.stop();
+    expect(blob.size).toBe(1);
+  });
 });
