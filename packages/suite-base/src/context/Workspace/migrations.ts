@@ -49,6 +49,9 @@ export function migrateV0WorkspaceState(
   const v0State = oldState as WorkspaceContextStoreV0;
   const migrated: WorkspaceContextStore = {
     dialogs: {
+      commandPalette: {
+        open: false,
+      },
       dataSource: {
         activeDataSource: undefined,
         item: undefined,

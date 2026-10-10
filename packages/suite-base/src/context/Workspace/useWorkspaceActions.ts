@@ -29,6 +29,11 @@ import { useOpenFile } from "./useOpenFile";
 
 export type WorkspaceActions = {
   dialogActions: {
+    commandPalette: {
+      close: () => void;
+      open: () => void;
+      toggle: () => void;
+    };
     dataSource: {
       close: () => void;
       open: (item: DataSourceDialogItem, dataSource?: IDataSourceFactory) => void;
@@ -103,6 +108,24 @@ export function useWorkspaceActions(): WorkspaceActions {
   return useMemo(() => {
     return {
       dialogActions: {
+        commandPalette: {
+          close: () => {
+            set((draft) => {
+              draft.dialogs.commandPalette.open = false;
+            });
+          },
+          open: () => {
+            set((draft) => {
+              draft.dialogs.commandPalette.open = true;
+            });
+          },
+          toggle: () => {
+            set((draft) => {
+              draft.dialogs.commandPalette.open = !draft.dialogs.commandPalette.open;
+            });
+          },
+        },
+
         dataSource: {
           close: () => {
             set((draft) => {

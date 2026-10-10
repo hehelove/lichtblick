@@ -26,6 +26,7 @@ import McapBundleAPI from "@lichtblick/suite-base/api/mcapBundle/McapBundleAPI";
 import AccountSettings from "@lichtblick/suite-base/components/AccountSettingsSidebar/AccountSettings";
 import { AlertsList } from "@lichtblick/suite-base/components/AlertList/AlertsList";
 import { AppBar } from "@lichtblick/suite-base/components/AppBar";
+import { makeCommandPaletteKeyDownHandler } from "@lichtblick/suite-base/components/CommandPalette/commands";
 import {
   DataSourceDialog,
   DataSourceDialogItem,
@@ -481,6 +482,7 @@ function WorkspaceContent(props: WorkspaceProps): React.JSX.Element {
       "]": () => {
         sidebarActions.right.setOpen((oldValue) => !oldValue);
       },
+      k: makeCommandPaletteKeyDownHandler(dialogActions.commandPalette.open),
       o: (ev: KeyboardEvent) => {
         if (!keyboardEventHasModifier(ev)) {
           return;
@@ -495,7 +497,13 @@ function WorkspaceContent(props: WorkspaceProps): React.JSX.Element {
         });
       },
     };
-  }, [dialogActions.dataSource, dialogActions.openFile, sidebarActions.left, sidebarActions.right]);
+  }, [
+    dialogActions.commandPalette,
+    dialogActions.dataSource,
+    dialogActions.openFile,
+    sidebarActions.left,
+    sidebarActions.right,
+  ]);
 
   const targetUrlState = useMemo(() => {
     const deepLinks = props.deepLinks ?? [];
@@ -775,6 +783,9 @@ export default function Workspace(props: WorkspaceProps): React.JSX.Element {
 
   const initialState: Pick<WorkspaceContextStore, "dialogs"> = {
     dialogs: {
+      commandPalette: {
+        open: false,
+      },
       dataSource: {
         activeDataSource: undefined,
         open: initialItem != undefined,

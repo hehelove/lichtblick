@@ -280,6 +280,7 @@ const mockWorkspaceStore = {
 
 const mockWorkspaceActions = {
   dialogActions: {
+    commandPalette: { open: jest.fn(), close: jest.fn(), toggle: jest.fn() },
     dataSource: { open: jest.fn(), close: jest.fn() },
     preferences: { open: jest.fn() },
     openFile: { open: jest.fn().mockResolvedValue(undefined) },

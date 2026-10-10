@@ -6,6 +6,7 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/
 
 import { AppSettingsDialog } from "@lichtblick/suite-base/components/AppSettingsDialog";
+import { WorkspaceCommandPalette } from "@lichtblick/suite-base/components/CommandPalette/CommandPalette";
 import {
   useWorkspaceStore,
   WorkspaceContextStore,
@@ -16,11 +17,15 @@ import { useWorkspaceActions } from "../context/Workspace/useWorkspaceActions";
 const selectWorkspacePrefsDialogOpen = (store: WorkspaceContextStore) =>
   store.dialogs.preferences.open;
 
+const selectCommandPaletteOpen = (store: WorkspaceContextStore) =>
+  store.dialogs.commandPalette.open;
+
 /**
  * Encapsulates dialogs shown and controlled at workspace level.
  */
 export function WorkspaceDialogs(): React.JSX.Element {
   const prefsDialogOpen = useWorkspaceStore(selectWorkspacePrefsDialogOpen);
+  const commandPaletteOpen = useWorkspaceStore(selectCommandPaletteOpen);
   const { dialogActions } = useWorkspaceActions();
 
   return (
@@ -34,6 +39,7 @@ export function WorkspaceDialogs(): React.JSX.Element {
           }}
         />
       )}
+      {commandPaletteOpen && <WorkspaceCommandPalette />}
     </>
   );
 }

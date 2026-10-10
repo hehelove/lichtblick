@@ -20,6 +20,7 @@ jest.mock("./useOpenFile", () => ({
 function makeInitialState(): WorkspaceContextStore {
   return {
     dialogs: {
+      commandPalette: { open: false },
       dataSource: { activeDataSource: undefined, item: undefined, open: false },
       preferences: { initialTab: undefined, open: false },
     },
