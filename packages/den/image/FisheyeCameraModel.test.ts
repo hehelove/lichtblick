@@ -223,6 +223,19 @@ describe("FisheyeCameraModel", () => {
     expect(Math.atan2(Math.hypot(out.x, out.y), out.z)).toBeCloseTo(1);
   });
 
+  it("treats a zero-padded crit_theta slot as absent (falls back to the hard cap)", () => {
+    const model = new FisheyeCameraModel(
+      makeCameraInfo("fisheye62", [0, 0, 0, 0, 0, 0, 0]),
+    );
+
+    // A zero D[6] must not collapse plane output to (0, 0, 1); pixel at theta = 1 rad
+    // stays unclamped because 1 < the 85° hard cap.
+    model.projectPixelTo3dPlane(out, { x: CX + FX, y: CY });
+    expect(out.x).toBeCloseTo(Math.tan(1));
+    expect(out.y).toBeCloseTo(0);
+    expect(out.z).toBeCloseTo(1);
+  });
+
   it("clamps theta beyond the 85° hard cap in plane mode", () => {
     const model = new FisheyeCameraModel(
       makeCameraInfo(

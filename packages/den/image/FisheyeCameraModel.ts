@@ -98,9 +98,10 @@ export class FisheyeCameraModel implements ICameraModel {
     this.#radial = [D[0] ?? 0, D[1] ?? 0, D[2] ?? 0, D[3] ?? 0];
     this.#p0 = fisheye62 ? (D[4] ?? 0) : 0;
     this.#p1 = fisheye62 ? (D[5] ?? 0) : 0;
+    // Zero-padded crit_theta slots are common in real drivers; only a positive finite D[6] caps.
     this.#planeThetaCap =
-      fisheye62 && D.length === 7
-        ? Math.min(D[6] ?? Infinity, MAX_PLANE_THETA)
+      fisheye62 && D.length === 7 && Number.isFinite(D[6]) && (D[6] ?? 0) > 0
+        ? Math.min(D[6]!, MAX_PLANE_THETA)
         : MAX_PLANE_THETA;
 
     // Binning = 0 is considered the same as binning = 1 (no binning).
