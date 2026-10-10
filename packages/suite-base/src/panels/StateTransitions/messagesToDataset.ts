@@ -18,10 +18,12 @@ import { getTimestampForMessageEvent } from "@lichtblick/suite-base/util/time";
 
 import positiveModulo from "./positiveModulo";
 import {
+  DYNAMIC_INDEX_PREFIX,
   dynamicIndexIdentity,
   dynamicIndexValue,
   dynamicSeriesIdentity,
   getDynamicFields,
+  isIndexIdentity,
   isLabelKeyedArray,
 } from "./shared";
 import { DynamicMessageDatasetsArgs, MessageDatasetArgs, ValidQueriedDataValue } from "./types";
@@ -326,8 +328,8 @@ function extractDynamicData(
   }
   // Mirrors getDynamicSeries' index fallback; out-of-range (or malformed) indexes yield
   // undefined values, which the caller treats as a gap.
-  if (identity.startsWith("index:")) {
-    const index = Number(identity.slice("index:".length));
+  if (isIndexIdentity(identity)) {
+    const index = Number(identity.slice(DYNAMIC_INDEX_PREFIX.length));
     return {
       path: `${path.value}[${index}]`,
       value: dynamicIndexValue(value[index], valueField),

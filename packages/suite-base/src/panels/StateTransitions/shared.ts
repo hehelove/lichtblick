@@ -49,8 +49,15 @@ export function dynamicSeriesIdentity(value: ValidQueriedDataValue): string {
 
 // Index-keyed rows use a prefix outside dynamicSeriesIdentity's `${typeof}:${value}` grammar
 // (typeof is never "index"), so a numeric label 0 ("number:0") can never collide with "index:0".
+export const DYNAMIC_INDEX_PREFIX = "index:";
+
 export function dynamicIndexIdentity(index: number): string {
-  return `index:${index}`;
+  return `${DYNAMIC_INDEX_PREFIX}${index}`;
+}
+
+/** True when an identity names an index-keyed row produced by dynamicIndexIdentity. */
+export function isIndexIdentity(identity: string): boolean {
+  return identity.startsWith(DYNAMIC_INDEX_PREFIX);
 }
 
 /** An array is label-keyed when any object entry carries valid label and value primitives. */
