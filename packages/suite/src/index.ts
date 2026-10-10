@@ -94,6 +94,8 @@ export type Subscription = {
    * messages for the topic. The default behavior is to only load messages for the current frame.
    *
    * **Only** topics with `preload: true` are available in the `allFrames` render state.
+   *
+   * @deprecated Please use {@link PanelExtensionContext.subscribeMessageRange} instead.
    */
   preload?: boolean;
 
@@ -220,6 +222,8 @@ export type RenderState = {
 
   /**
    * All available messages. Best-effort list of all available messages.
+   *
+   * @deprecated Please use {@link PanelExtensionContext.subscribeMessageRange} instead.
    */
   allFrames?: MessageEvent[];
 
@@ -367,7 +371,15 @@ export type PanelExtensionContext = {
    * Subscribe to updates on this field within the render state. Render will only be invoked when
    * this field changes.
    */
-  watch: (field: keyof RenderState) => void;
+  watch(field: keyof RenderState): void;
+
+  /**
+   * Subscribe to updates on this field within the render state. Render will only be invoked when
+   * this field changes.
+   *
+   * @deprecated Calling `watch` with `allFrames` is deprecated. Use {@link PanelExtensionContext.subscribeMessageRange} instead.
+   */
+  watch(field: "allFrames"): void;
 
   /**
    * Save arbitrary object as persisted panel state. This state is persisted for the panel
@@ -503,18 +515,28 @@ export type PanelExtensionContext = {
   setDefaultPanelTitle(defaultTitle: string | undefined): void;
 
   /**
-   * Enables subscription to retrieve complete message history for a specified topic from the active data source.
+   * Subscribe to receive the entire time range of messages for a given topic for the current data source.
    *
    * See {@link SubscribeMessageRangeArgs} for more information on behavior.
    *
-   * Note: This functionality is unavailable for real-time data sources, including foxglove_bridge, rosbridge, or ROS 1
-   * native connections. For such sources, you must utilize `context.subscribe()` and
+   * Note: This will not read messages for live sources, like foxglove_bridge, rosbridge, or ROS 1
+   * native connections. For those messages you will still need to use `context.subscribe()` and
    * `watch("currentFrame")`.
    *
-   * @returns A cleanup function that terminates the topic subscription, cancels the running async iterator,
-   * and blocks future invocations of {@link SubscribeMessageRangeArgs.onNewRangeIterator | onNewRangeIterator}.
+   * @returns A function that will unsubscribe from the topic, cancel the active async iterator,
+   * and prevent {@link SubscribeMessageRangeArgs.onNewRangeIterator | onNewRangeIterator} from being called again.
    */
-  unstable_subscribeMessageRange: (args: SubscribeMessageRangeArgs) => () => void;
+  subscribeMessageRange?: (args: SubscribeMessageRangeArgs) => () => void;
+
+  /**
+   * @deprecated Renamed to `subscribeMessageRange`. Please use that method instead.
+   */
+  unstable_subscribeMessageRange?: (args: SubscribeMessageRangeArgs) => () => void;
+
+  /**
+   * @deprecated Renamed to `subscribeMessageRange`. Please use that method instead.
+   */
+  UNSTABLE_subscribeMessageRange?: (args: SubscribeMessageRangeArgs) => () => void;
 
   /**
    * Reads the most recent message on `topic` at or before `time`, without moving the playback

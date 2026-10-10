@@ -360,7 +360,7 @@ function MapPanel(props: MapPanelProps): React.JSX.Element {
       if (config.disabledTopics.includes(topic.name)) {
         continue;
       }
-      const unsubscribe = context.unstable_subscribeMessageRange({
+      const unsubscribe = context.subscribeMessageRange?.({
         topic: topic.name,
         convertTo: topic.schemaName,
         onNewRangeIterator: async (batchIterator) => {
@@ -370,7 +370,9 @@ function MapPanel(props: MapPanelProps): React.JSX.Element {
           }
         },
       });
-      unsubscriptions.push(unsubscribe);
+      if (unsubscribe) {
+        unsubscriptions.push(unsubscribe);
+      }
     }
 
     return () => {

@@ -136,7 +136,7 @@ const createMockContext = (
     setDefaultPanelTitle: jest.fn(),
     unstable_fetchAsset: jest.fn(),
     unstable_setMessagePathDropConfig: jest.fn(),
-    unstable_subscribeMessageRange: jest.fn(),
+    subscribeMessageRange: jest.fn(),
     unstable_setAlert: jest.fn(),
     dataSourceProfile: "ros1",
     layout: {
@@ -551,7 +551,7 @@ describe("ThreeDeeRender", () => {
           },
           ...overrides?.initialState,
         },
-        unstable_subscribeMessageRange: jest.fn((args: any) => {
+        subscribeMessageRange: jest.fn((args: any) => {
           const customUnsubscribe = overrides?.onSubscribe?.(args);
           return customUnsubscribe ?? mockUnsubscribe;
         }),
@@ -610,7 +610,7 @@ describe("ThreeDeeRender", () => {
       });
 
       // Then
-      expect(mockContext.unstable_subscribeMessageRange).toHaveBeenCalledTimes(0);
+      expect(mockContext.subscribeMessageRange).toHaveBeenCalledTimes(0);
       expect(mockUnsubscribe).not.toHaveBeenCalled();
     });
 
@@ -649,7 +649,7 @@ describe("ThreeDeeRender", () => {
         expect(customRendererInstance.setTopics).toHaveBeenCalledWith(topics);
       });
 
-      expect(mockContext.unstable_subscribeMessageRange).toHaveBeenCalledTimes(1);
+      expect(mockContext.subscribeMessageRange).toHaveBeenCalledTimes(1);
       expect(mockUnsubscribe).not.toHaveBeenCalled();
 
       // When
@@ -673,7 +673,7 @@ describe("ThreeDeeRender", () => {
       // Then
       // subscribeMessageRange was called 3 times:
       // 1 call for /tf, After adding /new_topic: 2 more calls (for both /tf and /new_topic)
-      expect(mockContext.unstable_subscribeMessageRange).toHaveBeenCalledTimes(3);
+      expect(mockContext.subscribeMessageRange).toHaveBeenCalledTimes(3);
       expect(mockUnsubscribe).toHaveBeenCalled();
     });
 
@@ -713,7 +713,7 @@ describe("ThreeDeeRender", () => {
         expect(customRendererInstance.setTopics).toHaveBeenCalledWith(topics);
       });
 
-      expect(mockContext.unstable_subscribeMessageRange).toHaveBeenCalledTimes(1);
+      expect(mockContext.subscribeMessageRange).toHaveBeenCalledTimes(1);
       expect(mockUnsubscribe).not.toHaveBeenCalled();
 
       // When
@@ -737,7 +737,7 @@ describe("ThreeDeeRender", () => {
 
       // Then
       // subscribeMessageRange was not called again
-      expect(mockContext.unstable_subscribeMessageRange).toHaveBeenCalledTimes(1);
+      expect(mockContext.subscribeMessageRange).toHaveBeenCalledTimes(1);
       expect(mockUnsubscribe).not.toHaveBeenCalled();
     });
 
@@ -776,7 +776,7 @@ describe("ThreeDeeRender", () => {
           expect(customRendererInstance.setTopics).toHaveBeenCalledWith(topics);
         });
 
-        expect(mockContext.unstable_subscribeMessageRange).toHaveBeenCalledTimes(1);
+        expect(mockContext.subscribeMessageRange).toHaveBeenCalledTimes(1);
         expect(mockUnsubscribe).not.toHaveBeenCalled();
 
         // When
@@ -839,7 +839,7 @@ describe("ThreeDeeRender", () => {
           expect(customRendererInstance.setTopics).toHaveBeenCalledWith(topics);
         });
 
-        expect(mockContext.unstable_subscribeMessageRange).toHaveBeenCalledTimes(1);
+        expect(mockContext.subscribeMessageRange).toHaveBeenCalledTimes(1);
         expect(mockUnsubscribe).not.toHaveBeenCalled();
 
         // When
@@ -1170,7 +1170,7 @@ describe("ThreeDeeRender", () => {
 
       // Reset the mock to track new calls
       customRendererInstance.handleAllFramesMessages.mockClear();
-      (mockContext.unstable_subscribeMessageRange as jest.Mock).mockClear();
+      (mockContext.subscribeMessageRange as jest.Mock).mockClear();
 
       // When - Emit clearPreloadBuffer event
       act(() => {
@@ -1180,7 +1180,7 @@ describe("ThreeDeeRender", () => {
       // Then - Should trigger reload
       await waitFor(
         () => {
-          expect(mockContext.unstable_subscribeMessageRange).toHaveBeenCalled();
+          expect(mockContext.subscribeMessageRange).toHaveBeenCalled();
         },
         { timeout: 2000 },
       );

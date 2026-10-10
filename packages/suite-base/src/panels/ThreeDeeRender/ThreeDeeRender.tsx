@@ -569,7 +569,7 @@ export function ThreeDeeRender(props: Readonly<ThreeDeeRenderProps>): React.JSX.
 
     for (const topic of transformTopics) {
       const promise = new Promise<void>((resolve) => {
-        const unsubscribe = context.unstable_subscribeMessageRange({
+        const unsubscribe = context.subscribeMessageRange?.({
           topic: topic.topic,
           convertTo: topic.convertTo,
           onNewRangeIterator: async (batchIterator) => {
@@ -588,7 +588,9 @@ export function ThreeDeeRender(props: Readonly<ThreeDeeRenderProps>): React.JSX.
             resolve();
           },
         });
-        unsubscriptions.push(unsubscribe);
+        if (unsubscribe) {
+          unsubscriptions.push(unsubscribe);
+        }
       });
       subscriptionPromises.push(promise);
     }
