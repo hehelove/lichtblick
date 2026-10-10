@@ -251,6 +251,17 @@ export type NavPath = Readonly<{
   poses: PoseStamped[];
 }>;
 
+// https://docs.ros.org/en/api/sensor_msgs/html/msg/NavSatFix.html
+export type NavSatFix = Readonly<{
+  header: Header;
+  status: { status: number; service: number };
+  latitude: number;
+  longitude: number;
+  altitude: number;
+  position_covariance: number[];
+  position_covariance_type: number;
+}>;
+
 export type PolygonStamped = {
   header: Header;
   polygon: Polygon;
@@ -368,6 +379,9 @@ addRosDataType(POSE_ARRAY_DATATYPES, "geometry_msgs/PoseArray");
 
 export const NAV_PATH_DATATYPES = new Set<string>();
 addRosDataType(NAV_PATH_DATATYPES, "nav_msgs/Path");
+
+export const NAV_SAT_FIX_DATATYPES = new Set<string>();
+addRosDataType(NAV_SAT_FIX_DATATYPES, "sensor_msgs/NavSatFix");
 
 export const CAMERA_INFO_DATATYPES = new Set<string>();
 addRosDataType(CAMERA_INFO_DATATYPES, "sensor_msgs/CameraInfo");

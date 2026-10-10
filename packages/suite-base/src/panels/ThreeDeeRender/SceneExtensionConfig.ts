@@ -13,6 +13,7 @@ import { ImageMode } from "@lichtblick/suite-base/panels/ThreeDeeRender/renderab
 import { Images } from "@lichtblick/suite-base/panels/ThreeDeeRender/renderables/Images";
 import { LaserScans } from "@lichtblick/suite-base/panels/ThreeDeeRender/renderables/LaserScans";
 import { Markers } from "@lichtblick/suite-base/panels/ThreeDeeRender/renderables/Markers";
+import { NavSatFixes } from "@lichtblick/suite-base/panels/ThreeDeeRender/renderables/NavSatFixes";
 import { OccupancyGrids } from "@lichtblick/suite-base/panels/ThreeDeeRender/renderables/OccupancyGrids";
 import { PointClouds } from "@lichtblick/suite-base/panels/ThreeDeeRender/renderables/PointClouds";
 import { Polygons } from "@lichtblick/suite-base/panels/ThreeDeeRender/renderables/Polygons";
@@ -95,6 +96,10 @@ export const DEFAULT_SCENE_EXTENSION_CONFIG: SceneExtensionConfig = {
     },
     [LaserScans.extensionId]: {
       init: (renderer: IRenderer) => new LaserScans(renderer),
+    },
+    [NavSatFixes.extensionId]: {
+      init: (renderer: IRenderer) => new NavSatFixes(renderer),
+      supportedInterfaceModes: ["3d"],
     },
     [OccupancyGrids.extensionId]: {
       init: (renderer: IRenderer) => new OccupancyGrids(renderer),

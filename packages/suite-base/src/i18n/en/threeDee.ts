@@ -17,6 +17,7 @@ export const threeDee = {
   scale: "Scale",
   sync: "Sync",
   gradient: "Gradient",
+  flattenAltitude: "Flatten altitude",
   type: "Type",
   topic: "Topic",
 
