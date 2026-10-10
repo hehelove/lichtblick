@@ -495,6 +495,7 @@ export function ThreeDeeRender(props: Readonly<ThreeDeeRenderProps>): React.JSX.
       return [];
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- preload still drives allFrames delivery
     const filteredTopics = topicsToSubscribe.filter((sub) => sub.preload === true);
 
     // Manual comparison for better performance than lodash.isEqual

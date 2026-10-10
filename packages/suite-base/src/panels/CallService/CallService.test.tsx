@@ -36,16 +36,18 @@ function setup(
 
 describe("CallService", () => {
   it("shows a timeout error and re-enables the button when the service never responds", async () => {
-    const button = setup({ ...baseConfig, timeoutMs: 20 }, () => new Promise(() => {}));
+    const button = setup({ ...baseConfig, timeoutMs: 20 }, async () => await new Promise(() => {}));
 
-    await waitFor(() => expect(button).toBeEnabled());
+    await waitFor(() => {
+      expect(button).toBeEnabled();
+    });
     await userEvent.click(button);
 
-    await waitFor(() =>
+    await waitFor(() => {
       expect(screen.getByPlaceholderText("Response")).toHaveValue(
         "Service call timed out after 20 ms",
-      ),
-    );
+      );
+    });
     expect(button).toBeEnabled();
 
     // The timeout is expected and logged via log.error(); acknowledge and clear it.
@@ -58,19 +60,23 @@ describe("CallService", () => {
   it("waits indefinitely for a slow service when no timeout is configured", async () => {
     const button = setup(
       baseConfig,
-      () =>
-        new Promise((resolve) => {
-          setTimeout(() => resolve({ success: true }), 50);
+      async () =>
+        await new Promise((resolve) => {
+          setTimeout(() => {
+            resolve({ success: true });
+          }, 50);
         }),
     );
 
-    await waitFor(() => expect(button).toBeEnabled());
+    await waitFor(() => {
+      expect(button).toBeEnabled();
+    });
     await userEvent.click(button);
 
-    await waitFor(() =>
+    await waitFor(() => {
       expect(screen.getByPlaceholderText("Response")).toHaveValue(`{
   "success": true
-}`),
-    );
+}`);
+    });
   });
 });

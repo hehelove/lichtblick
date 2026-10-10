@@ -1013,6 +1013,7 @@ describe("PanelExtensionAdapter", () => {
 
   it("should handle unstable_subscribeMessageRange when getBatchIterator returns undefined", async () => {
     const initPanel = (context: PanelExtensionContext) => {
+      // eslint-disable-next-line @typescript-eslint/no-deprecated -- the alias itself is under test
       const cleanup = context.unstable_subscribeMessageRange!({
         topic: "/test/topic",
         onNewRangeIterator: async () => {
@@ -1044,6 +1045,7 @@ describe("PanelExtensionAdapter", () => {
   it("should return cleanup function from unstable_subscribeMessageRange", async () => {
     let cleanupCalled = false;
     const initPanel = (context: PanelExtensionContext) => {
+      // eslint-disable-next-line @typescript-eslint/no-deprecated -- the alias itself is under test
       const cleanup = context.unstable_subscribeMessageRange!({
         topic: "/test/topic",
         onNewRangeIterator: async () => {},

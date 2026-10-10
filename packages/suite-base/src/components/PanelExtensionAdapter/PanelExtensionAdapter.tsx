@@ -536,6 +536,7 @@ function PanelExtensionAdapter(
         const { byOutput: topicConvertersByOutput } = collateTopicConverters(messageConverters);
 
         const subscribePayloads = localSubs.flatMap((item): InternalSubscribePayload[] => {
+          // eslint-disable-next-line @typescript-eslint/no-deprecated -- bridging the deprecated preload field
           const preloadType = item.preload === true ? "full" : "partial";
 
           const outputConverter = topicConvertersByOutput.get(item.topic);
@@ -549,6 +550,7 @@ function PanelExtensionAdapter(
 
           // Preload requires full message history, so sampling is never allowed here.
           // Also, if the panel didn't request sampling, default to "needs all".
+          // eslint-disable-next-line @typescript-eslint/no-deprecated -- bridging the deprecated preload field
           if (item.preload === true || item.sampling?.mode !== "latest-per-render-tick") {
             return [{ topic: item.topic, preloadType }];
           }

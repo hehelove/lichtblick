@@ -187,19 +187,20 @@ function CallServiceContent(
         config.serviceName!,
         JSON.parse(config.requestPayload!),
       );
-      requestPromise.catch(() => {}); // late settle after a timeout is a no-op
+      void requestPromise.catch(() => {}); // late settle after a timeout is a no-op
       let timer: ReturnType<typeof setTimeout> | undefined;
       const response =
-        config.timeoutMs && config.timeoutMs > 0
+        config.timeoutMs != undefined && config.timeoutMs > 0
           ? await Promise.race([
               requestPromise,
               new Promise<never>((_, reject) => {
-                timer = setTimeout(
-                  () => reject(new Error(`Service call timed out after ${config.timeoutMs} ms`)),
-                  config.timeoutMs,
-                );
+                timer = setTimeout(() => {
+                  reject(new Error(`Service call timed out after ${config.timeoutMs} ms`));
+                }, config.timeoutMs);
               }),
-            ]).finally(() => clearTimeout(timer))
+            ]).finally(() => {
+              clearTimeout(timer);
+            })
           : await requestPromise;
       setState({
         status: "success",
