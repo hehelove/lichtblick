@@ -144,4 +144,22 @@ describe("PathLegend Component", () => {
     expect(screen.getByText("States · right")).toBeTruthy();
     expect(screen.getAllByTestId(/^row-0-/)).toHaveLength(2);
   });
+
+  it("renders index-fallback series rows as [n]", () => {
+    renderComponent({
+      pathState: [
+        {
+          path: {
+            value: "/states",
+            label: "path",
+            timestampMethod: "receiveTime" as const,
+          },
+          isArray: false,
+          dynamicSeries: [{ identity: "index:0", label: "[0]", sourceIndex: 0 }],
+        },
+      ],
+    });
+
+    expect(screen.getByText("path · [0]")).toBeTruthy();
+  });
 });

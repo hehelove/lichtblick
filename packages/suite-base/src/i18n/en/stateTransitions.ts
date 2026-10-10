@@ -13,7 +13,7 @@ export const stateTransitions = {
     axisLabel: "Axis label",
     deleteSeries: "Delete series",
     dynamicFieldsHelp:
-      "Object arrays are expanded automatically. Override these fields when their keys are not label and value.",
+      "Object arrays expand by label/value; entries without the label field (and primitive arrays) expand to one row per index, labeled [0], [1], …",
     dynamicLabelField: "Dynamic label field",
     dynamicValueField: "Dynamic value field",
     general: "General",

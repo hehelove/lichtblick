@@ -17,7 +17,13 @@ import { expandedLineColors } from "@lichtblick/suite-base/util/plotColors";
 import { getTimestampForMessageEvent } from "@lichtblick/suite-base/util/time";
 
 import positiveModulo from "./positiveModulo";
-import { dynamicSeriesIdentity, getDynamicFields } from "./shared";
+import {
+  dynamicIndexIdentity,
+  dynamicIndexValue,
+  dynamicSeriesIdentity,
+  getDynamicFields,
+  isLabelKeyedArray,
+} from "./shared";
 import { DynamicMessageDatasetsArgs, MessageDatasetArgs, ValidQueriedDataValue } from "./types";
 
 export const baseColors = [...expandedLineColors];
@@ -248,6 +254,16 @@ function extractDynamicValues(
   if (!Array.isArray(value)) {
     return result;
   }
+  // Mirrors getDynamicSeries: label-keyed when any entry has a valid label+value, index fallback otherwise.
+  if (!isLabelKeyedArray(value, labelField, valueField)) {
+    value.forEach((entry, index) => {
+      result.set(dynamicIndexIdentity(index), {
+        path: valueField,
+        value: dynamicIndexValue(entry, valueField),
+      });
+    });
+    return result;
+  }
   for (const entry of value) {
     if (typeof entry !== "object" || entry == undefined) {
       continue;
@@ -307,6 +323,15 @@ function extractDynamicData(
   const { labelField, valueField } = getDynamicFields(path);
   if (!Array.isArray(value)) {
     return undefined;
+  }
+  // Mirrors getDynamicSeries' index fallback; out-of-range (or malformed) indexes yield
+  // undefined values, which the caller treats as a gap.
+  if (identity.startsWith("index:")) {
+    const index = Number(identity.slice("index:".length));
+    return {
+      path: `${path.value}[${index}]`,
+      value: dynamicIndexValue(value[index], valueField),
+    };
   }
   for (const entry of value) {
     if (typeof entry !== "object" || entry == undefined) {

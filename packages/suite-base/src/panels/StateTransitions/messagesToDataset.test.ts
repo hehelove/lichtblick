@@ -639,6 +639,66 @@ describe("messagesToDataset", () => {
     expect(result[99]?.data[0]?.y).toBe(-900);
   });
 
+  it("expands primitive arrays to one dataset per index at the right y", () => {
+    const blocks: MessageAndData[][] = [
+      [
+        {
+          messageEvent: { ...messageEvent, receiveTime: { sec: 1, nsec: 0 } },
+          queriedData: [{ path: queriedDataPath, value: [10, 20, 30] }],
+        },
+      ],
+    ];
+
+    const result = messagesToDynamicDatasets({
+      ...args,
+      blocks,
+      path: { ...args.path, timestampMethod: "receiveTime" },
+      dynamicSeries: [
+        { identity: "index:0", label: "[0]", sourceIndex: 0 },
+        { identity: "index:1", label: "[1]", sourceIndex: 1 },
+        { identity: "index:2", label: "[2]", sourceIndex: 2 },
+      ],
+      yValues: [-9, -18, -27],
+    });
+
+    expect(result.map(({ label }) => label)).toEqual([
+      `${args.path.label} · [0]`,
+      `${args.path.label} · [1]`,
+      `${args.path.label} · [2]`,
+    ]);
+    expect(result.map((dataset) => dataset.data.map((datum) => datum?.value))).toEqual([
+      [10],
+      [20],
+      [30],
+    ]);
+    expect(result.map((dataset) => dataset.data[0]?.y)).toEqual([-9, -18, -27]);
+  });
+
+  it("creates a gap when the array shrinks below an index mid-stream", () => {
+    const blocks: MessageAndData[][] = [
+      [1, 2].map((sec) => ({
+        messageEvent: { ...messageEvent, receiveTime: { sec, nsec: 0 } },
+        queriedData: [
+          { path: queriedDataPath, value: sec === 1 ? [true, false] : [true] },
+        ],
+      })),
+    ];
+
+    const result = messagesToDynamicDatasets({
+      ...args,
+      blocks,
+      path: { ...args.path, timestampMethod: "receiveTime" },
+      dynamicSeries: [
+        { identity: "index:0", label: "[0]", sourceIndex: 0 },
+        { identity: "index:1", label: "[1]", sourceIndex: 1 },
+      ],
+      yValues: [-9, -18],
+    });
+
+    expect(result[0]?.data.map((datum) => datum?.value)).toEqual([true, true]);
+    expect(result[1]?.data.map((datum) => datum?.value)).toEqual([false, false, undefined]);
+  });
+
   it("should preserve the pending state before a gap", () => {
     const repeatedValue = BasicBuilder.number();
     const messageAndData = {
