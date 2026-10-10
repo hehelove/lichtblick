@@ -12,4 +12,5 @@ export type Config = {
   buttonText?: string;
   buttonTooltip?: string;
   buttonColor?: string;
+  timeoutMs?: number;
 };
