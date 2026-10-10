@@ -279,11 +279,6 @@ export default function CurrentLayoutProvider({
 
   // Load initial state by re-selecting the last selected layout from the UserProfile.
   useAsync(async () => {
-    // Don't restore the layout if there's one specified in the app state url.
-    if (windowAppURLState()?.layoutId) {
-      return;
-    }
-
     // For some reason, this needs to go before the setSelectedLayoutId, probably some initialization
     const { currentLayoutId } = await getUserProfile();
 
@@ -314,6 +309,20 @@ export default function CurrentLayoutProvider({
     }
 
     const layouts = await layoutManager.getLayouts();
+
+    // Select the layout specified by the ?layoutId= URL parameter, if any. It takes precedence
+    // over the defaultLayout app parameter and the user profile. Like a ?layout= override it is
+    // applied for the current session only, without persisting it to the user's profile.
+    const urlLayoutId = windowAppURLState()?.layoutId;
+    if (urlLayoutId != undefined) {
+      if (layouts.some((l) => l.id === urlLayoutId)) {
+        await setSelectedLayoutId(urlLayoutId, { saveToProfile: false });
+        return;
+      }
+      enqueueSnackbar(t("noLayoutIdParameter", { layoutId: urlLayoutId }), {
+        variant: "warning",
+      });
+    }
 
     // Check if there's a layout specified by app parameter. When multiple layouts share the
     // name, prefer the organizational (shared) layout over a local one.

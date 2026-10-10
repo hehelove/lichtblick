@@ -189,6 +189,18 @@ describe("app state url parser", () => {
       expect(parsed?.mcapBundleId).toBeUndefined();
     });
   });
+
+  it("parses layoutId from URL", () => {
+    expect(
+      parseAppURLState(new URL("https://app.example.com/?layoutId=abc-123"))?.layoutId,
+    ).toBe("abc-123");
+  });
+
+  it("parses layoutId alongside ds", () => {
+    expect(parseAppURLState(new URL("https://app.example.com/?ds=ros1&layoutId=abc"))?.layoutId).toBe(
+      "abc",
+    );
+  });
 });
 
 describe("updateAppURLState", () => {
@@ -277,6 +289,12 @@ describe("updateAppURLState", () => {
     urlWithLayout.searchParams.set("layoutUrl", "http://example.com/layout.json");
     const updated = updateAppURLState(urlWithLayout, { layoutUrl: undefined });
     expect(updated.searchParams.has("layoutUrl")).toBe(false);
+  });
+
+  it("updateAppURLState preserves an existing layoutId param", () => {
+    const url = new URL("https://app.example.com/?layoutId=abc&time=1");
+    const result = updateAppURLState(url, { time: { sec: 2, nsec: 0 } });
+    expect(result.searchParams.get("layoutId")).toBe("abc");
   });
 
   describe("url states", () => {

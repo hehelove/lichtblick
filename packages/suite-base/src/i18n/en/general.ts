@@ -11,4 +11,5 @@ export const general = {
   learnMore: "Learn more",
   noDefaultLayoutParameter:
     "The layout '{{layoutName}}' specified in the app parameters does not exist.",
+  noLayoutIdParameter: "The layout '{{layoutId}}' specified in the URL parameter does not exist.",
 };
