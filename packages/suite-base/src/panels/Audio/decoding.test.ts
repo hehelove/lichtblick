@@ -123,6 +123,12 @@ class FakeAudioDecoder {
   public close(): void {
     this.state = "closed";
   }
+
+  /** Simulates a fatal WebCodecs error: the error callback fires and the host closes the decoder. */
+  public simulateFatalError(): void {
+    this.state = "closed";
+    this.init.error(new Error("fatal"));
+  }
 }
 
 describe("CompressedAudioDecoder", () => {
@@ -167,6 +173,25 @@ describe("CompressedAudioDecoder", () => {
     const decoder = new CompressedAudioDecoder("mp4a.40.2", () => {});
     await decoder.decode({ ...opusMsg, format: "mp4a.40.2" });
     expect(FakeAudioDecoder.last?.config).toMatchObject({ codec: "mp4a.40.2" });
+    decoder.dispose();
+  });
+
+  it("rebuilds a decoder that a fatal error auto-closed instead of failing forever", async () => {
+    const frames: AudioFrame[] = [];
+    const decoder = new CompressedAudioDecoder("opus", (frame) => frames.push(frame));
+    await decoder.decode(opusMsg);
+    const dead = FakeAudioDecoder.last!;
+    expect(dead.decodeCount).toBe(1);
+
+    dead.simulateFatalError();
+
+    // The next chunk decodes on a fresh decoder instead of throwing "is closed" forever.
+    await decoder.decode(opusMsg);
+    const rebuilt = FakeAudioDecoder.last!;
+    expect(rebuilt).not.toBe(dead);
+    expect(rebuilt.state).toBe("configured");
+    expect(rebuilt.decodeCount).toBe(1);
+    expect(frames).toHaveLength(2);
     decoder.dispose();
   });
 
