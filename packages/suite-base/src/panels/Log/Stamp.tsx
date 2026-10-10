@@ -29,15 +29,26 @@ type Props = {
   stamp: Time;
   timestampFormat: TimeDisplayMethod;
   timeZone: string | undefined;
+  onSeek?: (stamp: Time) => void;
 };
 
 function Stamp(props: Props): React.JSX.Element {
+  const { onSeek } = props;
+  const clickableProps = {
+    "data-testid": "log-stamp",
+    onClick:
+      onSeek &&
+      (() => {
+        onSeek(props.stamp);
+      }),
+    style: { cursor: onSeek ? "pointer" : undefined },
+  };
   if (props.timestampFormat === "TOD") {
     const formattedTime = formatTime(props.stamp, props.timeZone);
-    return <span>{formattedTime}</span>;
+    return <span {...clickableProps}>{formattedTime}</span>;
   } else {
     return (
-      <span>
+      <span {...clickableProps}>
         {PadStart(props.stamp.sec, 10)}.{PadStart(props.stamp.nsec, 9)}
       </span>
     );

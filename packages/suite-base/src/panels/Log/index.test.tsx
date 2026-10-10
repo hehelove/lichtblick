@@ -3,14 +3,70 @@
 // SPDX-FileCopyrightText: Copyright (C) 2023-2026 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
 // SPDX-License-Identifier: MPL-2.0
 
+import { userEvent } from "@storybook/testing-library";
+import { cleanup, render, screen } from "@testing-library/react";
+import React from "react";
+
 import {
   SettingsTreeAction,
   SettingsTreeActionUpdate,
   SettingsTreeActionUpdatePayload,
 } from "@lichtblick/suite";
 import LogPanelExport, { createActionHandler } from "@lichtblick/suite-base/panels/Log";
-import { Config, LogLevel } from "@lichtblick/suite-base/panels/Log/types";
+import { Config, LogLevel, LogMessageEvent } from "@lichtblick/suite-base/panels/Log/types";
 import { BasicBuilder } from "@lichtblick/test-builders";
+
+// Shared mock instances; read lazily (at render/click time) so jest module
+// factory hoisting does not hit them before initialization.
+const mockSeekPlayback = jest.fn();
+const mockMessages: LogMessageEvent[] = [
+  {
+    topic: "/rosout",
+    schemaName: "foxglove.Log",
+    receiveTime: { sec: 100, nsec: 0 },
+    message: { level: 2, message: "hello", timestamp: { sec: 100, nsec: 42 } },
+    sizeInBytes: 0,
+  } as unknown as LogMessageEvent,
+];
+
+jest.mock("@lichtblick/suite-base/components/Panel", () => ({
+  __esModule: true,
+  default: (Component: React.ComponentType) => Component,
+}));
+jest.mock("@lichtblick/suite-base/components/MessagePipeline", () => ({
+  useMessagePipelineGetter: () => () => ({ seekPlayback: mockSeekPlayback }),
+}));
+jest.mock("@lichtblick/suite-base/PanelAPI", () => ({
+  useDataSourceInfo: () => ({ topics: [] }),
+  useMessagesByTopic: () => ({ "/rosout": mockMessages }),
+}));
+jest.mock("@lichtblick/suite-base/providers/PanelStateContextProvider", () => ({
+  usePanelSettingsTreeUpdate: () => jest.fn(),
+}));
+jest.mock("@lichtblick/suite-base/hooks/useAppTimeFormat", () => ({
+  useAppTimeFormat: () => ({ timeFormat: "SEC", timeZone: "UTC" }),
+}));
+jest.mock("notistack", () => ({
+  useSnackbar: () => ({ enqueueSnackbar: jest.fn() }),
+}));
+jest.mock("@lichtblick/suite-base/components/PanelToolbar", () => ({
+  __esModule: true,
+  default: ({ additionalIcons }: { additionalIcons?: React.ReactNode }) => (
+    <div data-testid="panel-toolbar">{additionalIcons}</div>
+  ),
+}));
+// Mock AutoSizer to avoid layout issues in tests
+jest.mock("react-virtualized-auto-sizer", () => ({
+  __esModule: true,
+  default: ({
+    children,
+  }: {
+    children: (props: { width: number; height: number }) => React.ReactNode;
+  }) => children({ width: 800, height: 600 }),
+}));
+jest.mock("react-resize-detector", () => ({
+  useResizeDetector: () => ({ width: 800, height: 600, ref: jest.fn() }),
+}));
 
 describe("Log Panel actionHandler", () => {
   describe("update action", () => {
@@ -280,5 +336,39 @@ describe("Log Panel Export Configuration", () => {
       searchTerms: [],
       minLogLevel: LogLevel.DEBUG,
     });
+  });
+});
+
+describe("Log Panel seek", () => {
+  let originalClientHeight: PropertyDescriptor | undefined;
+
+  beforeEach(() => {
+    // In JSDOM clientHeight is always 0, which makes the virtualized List skip
+    // row 0. Return DEFAULT_ROW_HEIGHT-sized rows so rows render (mirrors
+    // LogList.test.tsx).
+    originalClientHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight");
+    Object.defineProperty(HTMLElement.prototype, "clientHeight", {
+      configurable: true,
+      get() {
+        return 12;
+      },
+    });
+  });
+
+  afterEach(() => {
+    cleanup();
+    mockSeekPlayback.mockClear();
+    if (originalClientHeight) {
+      Object.defineProperty(HTMLElement.prototype, "clientHeight", originalClientHeight);
+    }
+  });
+
+  it("seeks when clicking a log timestamp", async () => {
+    const baseProps = { config: { searchTerms: [], minLogLevel: 1 }, saveConfig: jest.fn() };
+    render(<LogPanelExport {...baseProps} />);
+    await userEvent.click(screen.getAllByTestId("log-stamp")[0]!);
+    expect(mockSeekPlayback).toHaveBeenCalledWith(
+      expect.objectContaining({ sec: expect.any(Number), nsec: expect.any(Number) }),
+    );
   });
 });

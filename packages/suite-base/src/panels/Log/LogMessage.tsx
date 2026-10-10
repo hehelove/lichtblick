@@ -17,6 +17,7 @@
 import * as _ from "lodash-es";
 import { makeStyles } from "tss-react/mui";
 
+import { Time } from "@lichtblick/suite";
 import useLogStyles from "@lichtblick/suite-base/panels/Log/useLogStyles";
 import { TimeDisplayMethod } from "@lichtblick/suite-base/types/panels";
 import { customTypography } from "@lichtblick/theme";
@@ -44,6 +45,7 @@ export default React.memo(function LogMessage(props: {
   value: NormalizedLogMessage;
   timestampFormat: TimeDisplayMethod;
   timeZone: string | undefined;
+  onSeek?: (stamp: Time) => void;
 }) {
   const { value: msg, timestampFormat, timeZone } = props;
 
@@ -70,7 +72,14 @@ export default React.memo(function LogMessage(props: {
       <div>
         <span>[{_.padStart(strLevel, 5, " ")}]</span>
         <span>
-          [<Stamp stamp={stamp} timestampFormat={timestampFormat} timeZone={timeZone} />]
+          [
+          <Stamp
+            stamp={stamp}
+            timestampFormat={timestampFormat}
+            timeZone={timeZone}
+            onSeek={props.onSeek}
+          />
+          ]
         </span>
         {msg.name != undefined && <span>[{msg.name}]:</span>}
         <span>&nbsp;</span>
