@@ -159,6 +159,8 @@ jest.mock("@lichtblick/suite-base/components/MessagePipeline", () => ({
   useMessagePipelineGetter: jest.fn(),
 }));
 jest.mock("@lichtblick/suite-base/context/AppContext", () => ({
+  // XsLocalEventsProvider renders the real AppContext.Provider — keep the actual context object.
+  ...jest.requireActual("@lichtblick/suite-base/context/AppContext"),
   useAppContext: jest.fn(),
 }));
 jest.mock("@lichtblick/suite-base/context/CurrentLayoutContext", () => ({
@@ -171,9 +173,15 @@ jest.mock("@lichtblick/suite-base/context/CurrentUserContext", () => ({
   useCurrentUser: jest.fn(),
   useCurrentUserType: jest.fn(),
 }));
-jest.mock("@lichtblick/suite-base/context/EventsContext", () => ({
-  useEvents: jest.fn(),
-}));
+jest.mock("@lichtblick/suite-base/context/EventsContext", () => {
+  const react = jest.requireActual("react");
+  // XsLocalEventsProvider / XsEvalEventsBridge consume the raw context without an
+  // EventsProvider mounted here — give it a dummy non-undefined store value.
+  return {
+    useEvents: jest.fn(),
+    EventsContext: react.createContext({}),
+  };
+});
 jest.mock("@lichtblick/suite-base/context/LayoutManagerContext", () => ({
   useLayoutManager: jest.fn().mockReturnValue({
     getLayouts: jest.fn().mockResolvedValue([]),

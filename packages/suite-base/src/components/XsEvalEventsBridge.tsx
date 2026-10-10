@@ -9,6 +9,7 @@
 
 import { useEffect, useMemo } from "react";
 
+import { useGuaranteedContext } from "@lichtblick/hooks";
 import {
   add as addTimes,
   fromSec,
@@ -22,10 +23,13 @@ import {
   useMessagePipeline,
 } from "@lichtblick/suite-base/components/MessagePipeline";
 import {
+  EventsContext,
   EventsStore,
   TimelinePositionedEvent,
   useEvents,
 } from "@lichtblick/suite-base/context/EventsContext";
+
+import { mergeLocalEvents } from "./XsLocalEvents";
 
 type CaseEvent = {
   id?: unknown;
@@ -144,6 +148,7 @@ export function XsEvalEventsBridge(): ReactNull {
   const endKey = timeKey(endTime);
   const setEvents = useEvents(selectSetEvents);
   const setEventsSupported = useEvents(selectSetEventsSupported);
+  const eventsStore = useGuaranteedContext(EventsContext);
 
   useEffect(() => {
     if (!eventsUrl) {
@@ -168,7 +173,11 @@ export function XsEvalEventsBridge(): ReactNull {
             return;
           }
           const positioned = caseEventsToPositioned(data, startTime, endTime);
-          setEvents({ loading: false, value: positioned });
+          // 保留用户本地创建的事件（deviceId === "local"），评测重拉不再清掉它们。
+          const kept = (eventsStore.getState().events.value ?? []).filter(
+            (entry) => entry.event.deviceId === "local",
+          );
+          setEvents({ loading: false, value: mergeLocalEvents(kept, positioned) });
         })
         .catch((err: unknown) => {
           if (cancelled) {
@@ -191,7 +200,7 @@ export function XsEvalEventsBridge(): ReactNull {
       cancelled = true;
       window.removeEventListener("xs-eval-events-refresh", onRefresh);
     };
-  }, [eventsUrl, startKey, endKey, startTime, endTime, setEvents]);
+  }, [eventsUrl, startKey, endKey, startTime, endTime, setEvents, eventsStore]);
 
   return ReactNull;
 }

@@ -59,6 +59,7 @@ import { TopicList } from "@lichtblick/suite-base/components/TopicList";
 import VariablesList from "@lichtblick/suite-base/components/VariablesList";
 import { WorkspaceDialogs } from "@lichtblick/suite-base/components/WorkspaceDialogs";
 import { XsEvalEventsBridge } from "@lichtblick/suite-base/components/XsEvalEventsBridge";
+import { XsLocalEventsProvider } from "@lichtblick/suite-base/components/XsLocalEvents";
 import { AllowedFileExtensions } from "@lichtblick/suite-base/constants/allowedFileExtensions";
 import { useAppContext } from "@lichtblick/suite-base/context/AppContext";
 import {
@@ -739,18 +740,21 @@ function WorkspaceContent(props: WorkspaceProps): React.JSX.Element {
             </Stack>
           </RemountOnValueChange>
         </Sidebars>
-        {play && pause && seek && (
-          <div style={{ flexShrink: 0 }} data-testid="playback-controls">
-            <PlaybackControls
-              play={play}
-              pause={pause}
-              seek={seek}
-              playUntil={playUntil}
-              isPlaying={isPlaying}
-              getTimeInfo={getTimeInfo}
-            />
-          </div>
-        )}
+        {/* xs：本地事件 createEvent 经 AppContext 提供给 PlaybackControls/CreateEventDialog。 */}
+        <XsLocalEventsProvider>
+          {play && pause && seek && (
+            <div style={{ flexShrink: 0 }} data-testid="playback-controls">
+              <PlaybackControls
+                play={play}
+                pause={pause}
+                seek={seek}
+                playUntil={playUntil}
+                isPlaying={isPlaying}
+                getTimeInfo={getTimeInfo}
+              />
+            </div>
+          )}
+        </XsLocalEventsProvider>
       </div>
       <WorkspaceDialogs />
     </PanelStateContextProvider>
