@@ -367,8 +367,7 @@ describe("Log Panel seek", () => {
     const baseProps = { config: { searchTerms: [], minLogLevel: 1 }, saveConfig: jest.fn() };
     render(<LogPanelExport {...baseProps} />);
     await userEvent.click(screen.getAllByTestId("log-stamp")[0]!);
-    expect(mockSeekPlayback).toHaveBeenCalledWith(
-      expect.objectContaining({ sec: expect.any(Number), nsec: expect.any(Number) }),
-    );
+    // Exact stamp (not receiveTime {sec:100,nsec:0}) so a wrong-clock seek fails the test.
+    expect(mockSeekPlayback).toHaveBeenCalledWith({ sec: 100, nsec: 42 });
   });
 });
