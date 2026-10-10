@@ -139,6 +139,11 @@ const COLOR_WHITE = { r: 1, g: 1, b: 1, a: 1 };
 
 export class NavSatFixes extends SceneExtension<NavSatFixRenderable> {
   public static extensionId = "foxglove.NavSatFixes";
+
+  // Rebuild at most once per rendered frame — rebuilding per fix would make a preload or
+  // seek replay of n fixes cost O(n²) allocations.
+  #dirtyTopics = new Set<string>();
+
   public constructor(
     renderer: IRenderer,
     name: string = NavSatFixes.extensionId,
@@ -238,6 +243,13 @@ export class NavSatFixes extends SceneExtension<NavSatFixRenderable> {
     for (const renderable of this.renderables.values()) {
       renderable.visible = renderable.userData.settings.visible;
     }
+    for (const topic of this.#dirtyTopics) {
+      const renderable = this.renderables.get(topic);
+      if (renderable) {
+        this.#updateTrack(renderable);
+      }
+    }
+    this.#dirtyTopics.clear();
   }
 
   #handleNavSatFix = (
@@ -313,7 +325,7 @@ export class NavSatFixes extends SceneExtension<NavSatFixRenderable> {
       alt: altitude,
     });
 
-    this.#updateTrack(renderable);
+    this.#dirtyTopics.add(topic);
   };
 
   #updateTrack(renderable: NavSatFixRenderable): void {
