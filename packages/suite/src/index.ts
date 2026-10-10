@@ -624,6 +624,12 @@ export type RegisterMessageConverterArgs<Src> = {
    * Custom settings for the topics using the schema specified in the *toSchemaName* property
    */
   panelSettings?: Record<string, PanelSettings<unknown>>;
+  /**
+   * Human-readable description of the output schema (`toSchemaName` for schema
+   * converters, `outputSchemaName` for topic converters). Not yet surfaced in
+   * the UI; reserved for upcoming schema documentation support.
+   */
+  outputSchemaDescription?: string;
 
   // ---- topic converter fields (only present when type === "topic") ----
   /** Input topics whose messages feed the converter. */
@@ -632,12 +638,6 @@ export type RegisterMessageConverterArgs<Src> = {
   outputTopic?: string;
   /** Schema name of messages emitted on `outputTopic`. */
   outputSchemaName?: string;
-  /**
-   * Human-readable description of the output schema (`toSchemaName` for schema
-   * converters, `outputSchemaName` for topic converters). Not yet surfaced in
-   * the UI; reserved for upcoming schema documentation support.
-   */
-  outputSchemaDescription?: string;
   /**
    * Initializes the converter. Called when a panel subscribes to `outputTopic`; receives the
    * current global variables and returns a function invoked with every input MessageEvent that

@@ -21,32 +21,15 @@ import PanelToolbar from "@lichtblick/suite-base/components/PanelToolbar";
 import Stack from "@lichtblick/suite-base/components/Stack";
 import { Topic } from "@lichtblick/suite-base/src/players/types";
 
-const useStyles = makeStyles<void, "copyIcon">()((theme, _params, classes) => ({
-  copyIcon: {
-    visibility: "hidden",
+const useStyles = makeStyles<void, "copyIcon" | "metadataJson" | "metadataSection">()(
+  (theme, _params, classes) => ({
+    copyIcon: {
+      visibility: "hidden",
 
-    "&:hover": {
-      backgroundColor: "transparent",
-    },
-  },
-  table: {
-    borderCollapse: "collapse",
-    display: "block",
-    flex: 1,
-
-    thead: {
-      position: "sticky",
-      textAlign: "left",
-      top: 0,
-      zIndex: theme.zIndex.appBar - 1,
-    },
-
-    tr: {
       "&:hover": {
-        backgroundColor: theme.palette.background.paper,
+        backgroundColor: "transparent",
       },
     },
-
     metadataSection: {
       padding: theme.spacing(1, 1.5),
     },
@@ -57,26 +40,44 @@ const useStyles = makeStyles<void, "copyIcon">()((theme, _params, classes) => ({
       whiteSpace: "pre-wrap",
       wordBreak: "break-all",
     },
+    table: {
+      borderCollapse: "collapse",
+      display: "block",
+      flex: 1,
 
-    th: {
-      backgroundColor: theme.palette.background.paper,
-      paddingBlock: theme.spacing(1),
-      paddingInline: theme.spacing(1.5),
-      whiteSpace: "nowrap",
-      width: "100%",
-    },
+      thead: {
+        position: "sticky",
+        textAlign: "left",
+        top: 0,
+        zIndex: theme.zIndex.appBar - 1,
+      },
 
-    td: {
-      paddingBlock: theme.spacing(0.25),
-      paddingInline: theme.spacing(1.5),
-      whiteSpace: "nowrap",
+      tr: {
+        "&:hover": {
+          backgroundColor: theme.palette.background.paper,
+        },
+      },
 
-      [`&:hover .${classes.copyIcon}`]: {
-        visibility: "visible",
+      th: {
+        backgroundColor: theme.palette.background.paper,
+        paddingBlock: theme.spacing(1),
+        paddingInline: theme.spacing(1.5),
+        whiteSpace: "nowrap",
+        width: "100%",
+      },
+
+      td: {
+        paddingBlock: theme.spacing(0.25),
+        paddingInline: theme.spacing(1.5),
+        whiteSpace: "nowrap",
+
+        [`&:hover .${classes.copyIcon}`]: {
+          visibility: "visible",
+        },
       },
     },
-  },
-}));
+  }),
+);
 
 function TopicRow({ topic }: { topic: Topic }): React.JSX.Element {
   const { classes } = useStyles();

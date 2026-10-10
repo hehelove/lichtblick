@@ -13,6 +13,8 @@ import React from "react";
 
 import { Metadata } from "@lichtblick/suite";
 
+import DataSourceInfoPanel from "./index";
+
 jest.mock("@lichtblick/suite-base/components/Panel", () => ({
   __esModule: true,
   default: (Component: React.ComponentType) =>
@@ -41,8 +43,6 @@ jest.mock("@lichtblick/suite-base/components/MessagePipeline", () => ({
     }),
 }));
 
-import DataSourceInfoPanel from "./index";
-
 describe("DataSourceInfoPanel", () => {
   it("shows metadata records with name and JSON fields", () => {
     mockMetadata = [
@@ -54,11 +54,9 @@ describe("DataSourceInfoPanel", () => {
 
     expect(screen.getByText("Metadata records")).toBeInTheDocument();
     expect(screen.getByText("metadata1")).toBeInTheDocument();
-    expect(screen.getByText(JSON.stringify({ key: "value" }))).toBeInTheDocument();
+    expect(screen.getByText('{"key":"value"}')).toBeInTheDocument();
     expect(screen.getByText("metadata2")).toBeInTheDocument();
-    expect(
-      screen.getByText(JSON.stringify({ another: "entry", count: "2" })),
-    ).toBeInTheDocument();
+    expect(screen.getByText('{"another":"entry","count":"2"}')).toBeInTheDocument();
   });
 
   it("hides the metadata section when there are no metadata records", () => {

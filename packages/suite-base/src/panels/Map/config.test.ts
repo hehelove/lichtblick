@@ -22,7 +22,7 @@ function makeConfig(layer: string): Config {
 
 describe("buildSettingsTree", () => {
   const t: TFunction<"map"> = jest.fn((key: string) =>
-    key.split(".").reduce((obj, part) => obj[part], map as Record<string, any>),
+    key.split(".").reduce<Record<string, any>>((obj, part) => obj[part], map),
   ) as unknown as TFunction<"map">;
 
   it("offers all five tile layer options", () => {

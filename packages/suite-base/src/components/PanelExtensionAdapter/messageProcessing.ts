@@ -76,13 +76,14 @@ export function convertMessage(
     } catch (e) {
       const error =
         e instanceof Error ? e : new Error(typeof e === "string" ? e : JSON.stringify(e));
+      const converterId = converter.extensionId ?? converter.toSchemaName;
       emitAlert(
         {
           severity: "error",
-          message: `Uncaught error in message converter (${converter.extensionId}) at ${formatTimeRaw(messageEvent.receiveTime)}`,
+          message: `Uncaught error in message converter (${converterId}) at ${formatTimeRaw(messageEvent.receiveTime)}`,
           error,
         },
-        `messageConverterError-${converter.extensionId}`,
+        `messageConverterError-${converterId}`,
       );
     }
   }
