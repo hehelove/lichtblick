@@ -18,6 +18,7 @@ import useAddPanel from "@lichtblick/suite-base/hooks/useAddPanel";
 import { useLayoutNavigation } from "@lichtblick/suite-base/hooks/useLayoutNavigation";
 import { commandPalette } from "@lichtblick/suite-base/i18n/en/commandPalette";
 import { Layout } from "@lichtblick/suite-base/services/ILayoutStorage";
+import { keyboardEventHasModifier } from "@lichtblick/suite-base/util/formatKeyboardShortcut";
 
 import { Command } from "./types";
 
@@ -112,11 +113,6 @@ export function buildCommands({
 
   return [...panelCommands, ...layoutCommands, ...viewCommands];
 }
-
-// Mirrors keyboardEventHasModifier in Workspace.tsx (kept local to avoid a circular
-// import through Workspace -> WorkspaceDialogs -> CommandPalette -> commands).
-const keyboardEventHasModifier = (event: KeyboardEvent) =>
-  navigator.userAgent.includes("Mac") ? event.metaKey : event.ctrlKey;
 
 /**
  * KeyListener preventDefaults every matched key unless the handler returns false,

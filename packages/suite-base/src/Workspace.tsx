@@ -95,6 +95,7 @@ import ICONS from "@lichtblick/suite-base/theme/icons";
 import { InjectedSidebarItem, Namespace, WorkspaceProps } from "@lichtblick/suite-base/types";
 import { parseAppURLState } from "@lichtblick/suite-base/util/appURLState";
 import useBroadcast from "@lichtblick/suite-base/util/broadcast/useBroadcast";
+import { keyboardEventHasModifier } from "@lichtblick/suite-base/util/formatKeyboardShortcut";
 import isDesktopApp from "@lichtblick/suite-base/util/isDesktopApp";
 
 import { useWorkspaceActions } from "./context/Workspace/useWorkspaceActions";
@@ -437,9 +438,6 @@ function WorkspaceContent(props: WorkspaceProps): React.JSX.Element {
     }
     return items;
   }, [enableDebugMode, showEventsTab, PerformanceSidebarComponent]);
-
-  const keyboardEventHasModifier = (event: KeyboardEvent) =>
-    navigator.userAgent.includes("Mac") ? event.metaKey : event.ctrlKey;
 
   function AddPanel() {
     const addPanel = useAddPanel();
