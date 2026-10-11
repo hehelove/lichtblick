@@ -207,9 +207,8 @@ describe("McpServer", () => {
     });
 
     await server.start(); // #started was reset, so a retry binds
-    expect(await postRpc(port, TOKEN, { jsonrpc: "2.0", id: 1, method: "initialize" }).then(
-      (res) => res.status,
-    ).catch(() => "err")).not.toBe(401);
+    expect(await isPortOpen(port)).toBe(true);
+    expect(await initialize(port, TOKEN)).toBeTruthy();
     await server.stop();
   });
 

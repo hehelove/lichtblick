@@ -62,7 +62,11 @@ export function setAppSetting(
 
   let existingSettings: Record<string, unknown> = {};
   try {
-    existingSettings = JSON.parse(fs.readFileSync(settingsPath, { encoding: "utf8" }));
+    const parsed: unknown = JSON.parse(fs.readFileSync(settingsPath, { encoding: "utf8" }));
+    // Only merge plain objects; a bare string/array file carries no settings to keep.
+    if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+      existingSettings = parsed as Record<string, unknown>;
+    }
   } catch {
     // Ignore file load or parsing errors, including settings.json not existing
   }
