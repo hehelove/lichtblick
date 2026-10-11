@@ -6,13 +6,21 @@ import { z } from "zod";
 import type { McpServer } from "../McpServer";
 
 export type ScriptToolDeps = {
-  sendCommand: (type: string, payload: unknown) => Promise<unknown>;
+  sendCommand: (
+    type: string,
+    payload: unknown,
+    opts?: { timeoutMs?: number },
+  ) => Promise<unknown>;
 };
 
 function textResult(value: unknown): {
   content: Array<{ type: "text"; text: string }>;
 } {
-  return { content: [{ type: "text", text: JSON.stringify(value) ?? "" }] };
+  // bigint payloads (e.g. ROS2 fields) are not JSON-representable; stringify them like JSON.stringify would fail.
+  const text = JSON.stringify(value, (_key, val: unknown) =>
+    typeof val === "bigint" ? val.toString() : val,
+  );
+  return { content: [{ type: "text", text: text ?? "" }] };
 }
 
 /**
@@ -56,9 +64,13 @@ export function registerScriptTools(
   mcp: Pick<McpServer, "registerTool">,
   deps: ScriptToolDeps,
 ): void {
-  async function run(type: string, payload: unknown) {
+  async function run(type: string, payload: unknown, opts?: { timeoutMs?: number }) {
     try {
-      return commandResult(await deps.sendCommand(type, payload));
+      const reply =
+        opts == undefined
+          ? await deps.sendCommand(type, payload)
+          : await deps.sendCommand(type, payload, opts);
+      return commandResult(reply);
     } catch (err) {
       // Dispatch failures (no window, timeout) are tool-level outcomes, not server failures.
       return {
@@ -118,5 +130,33 @@ export function registerScriptTools(
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
     },
     async ({ id }) => await run("script.delete", { id }),
+  );
+
+  mcp.registerTool(
+    "user_script_run",
+    {
+      title: "Run a user script and read back its output",
+      description:
+        "Run a user script in the focused Studio window against the current data source and return its output as a message stream: {outputTopic, schemaName, count, messages, logs, diagnostics}. Writes a temporary script into the layout (removed afterwards, but the layout mutates while it runs). Only file-like data sources support batch script runs; live data sources do not support batch script runs",
+      inputSchema: {
+        sourceCode: z.string().min(1).describe("Script source code (TypeScript/JavaScript)"),
+        name: z.string().optional().describe("Display name for the temporary script"),
+        maxMessages: z
+          .number()
+          .int()
+          .positive()
+          .default(100)
+          .describe("Maximum number of output messages to collect"),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
+    },
+    // The only tool overriding the 60s dispatch default: the run polls for topic registration and
+    // batch-collects the whole file. The ?? mirrors the schema default so direct cb calls agree.
+    async ({ sourceCode, name, maxMessages }) =>
+      await run(
+        "script.run",
+        { sourceCode, name, maxMessages: maxMessages ?? 100 },
+        { timeoutMs: 120_000 },
+      ),
   );
 }

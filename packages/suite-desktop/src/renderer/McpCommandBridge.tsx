@@ -5,7 +5,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 
 import { Time, clampTime, compare, fromSec, toSec } from "@lichtblick/rostime";
 import {
@@ -17,8 +17,15 @@ import {
   useCurrentLayoutActions,
 } from "@lichtblick/suite-base/context/CurrentLayoutContext";
 import { useLayoutManager } from "@lichtblick/suite-base/context/LayoutManagerContext";
+import { useUserScriptState } from "@lichtblick/suite-base/context/UserScriptStateContext";
 import type { ILayoutManager } from "@lichtblick/suite-base/services/ILayoutManager";
 import { MAX_SUPPORTED_LAYOUT_VERSION } from "@lichtblick/suite-base/providers/CurrentLayoutProvider/constants";
+import { DIAGNOSTIC_SEVERITY } from "@lichtblick/suite-base/players/UserScriptPlayer/constants";
+import type {
+  Diagnostic,
+  UserScriptLog,
+} from "@lichtblick/suite-base/players/UserScriptPlayer/types";
+import type { MessageEvent, Topic } from "@lichtblick/suite-base/players/types";
 import { validateLayoutData } from "@lichtblick/suite-base/util/layout";
 import type { UserScripts } from "@lichtblick/suite-base/types/panels";
 
@@ -288,18 +295,188 @@ export function executeScriptCommand(
   }
 }
 
+const RUN_SCRIPT_ID = "mcp-run-script";
+const RUN_SCRIPT_NAME = "mcp script run";
+const SCRIPT_RUN_BUSY = "a script run is already in progress";
+const LIVE_BATCH_ERROR = "live data sources do not support batch script runs";
+const DEFAULT_POLL_INTERVAL_MS = 100;
+const DEFAULT_POLL_TIMEOUT_MS = 10_000;
+
+// ponytail: module-level lock — the run uses one fixed temp script id, so one run at a time;
+// per-window locks only if windows ever need concurrent runs.
+let scriptRunInFlight = false;
+
+/** Diagnostics + logs the UserScriptPlayer writes for a script id during registration/runs. */
+export type ScriptRunState = {
+  diagnostics: readonly Diagnostic[];
+  logs: readonly UserScriptLog[];
+};
+
+/**
+ * Collaborators for `"script.run"`. getPipeline must return a FRESH pipeline read per call (the
+ * poll loop watches playerState.topics change as the UserScriptPlayer re-registers the script);
+ * getScriptState reads the UserScriptStateContext store the player writes logs/diagnostics into.
+ */
+export type ScriptRunCommandDeps = {
+  getUserScripts: () => UserScripts;
+  setUserScripts: (payload: Partial<UserScripts>) => void;
+  getPipeline: () => Pick<MessagePipelineContext, "playerState" | "getBatchIterator">;
+  getScriptState: (scriptId: string) => ScriptRunState | undefined;
+  pollIntervalMs?: number;
+  pollTimeoutMs?: number;
+};
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Serializes a script output message-event whole-but-JSON-safe (bigint payloads stringify). */
+function serializeMessage(ev: MessageEvent): Record<string, unknown> {
+  return {
+    topic: ev.topic,
+    schemaName: ev.schemaName,
+    receiveTime: { sec: ev.receiveTime.sec, nsec: ev.receiveTime.nsec },
+    publishTime:
+      ev.publishTime == undefined
+        ? undefined
+        : { sec: ev.publishTime.sec, nsec: ev.publishTime.nsec },
+    sizeInBytes: ev.sizeInBytes,
+    message: ev.message,
+  };
+}
+
+/**
+ * Waits until exactly one topic that was not in the baseline player state appears — the script's
+ * output topic (the UserScriptPlayer re-registers and emits new topics, index.ts:748-775). Fails
+ * with a discriminating error on ambiguity, with the script's error diagnostics as soon as the
+ * player reports them (compile errors never register a topic), or with a timeout error naming
+ * what was awaited. ponytail: baseline is captured once at run start — a source still loading
+ * (no activeData yet) yields an empty baseline and the run fails ambiguous/timeout; callers run
+ * against an already-loaded source.
+ */
+async function pollForOutputTopic(
+  deps: ScriptRunCommandDeps,
+  baseline: Set<string>,
+): Promise<{ outputTopic: Topic; schemaName?: string }> {
+  const intervalMs = deps.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
+  const timeoutMs = deps.pollTimeoutMs ?? DEFAULT_POLL_TIMEOUT_MS;
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const topics = deps.getPipeline().playerState.activeData?.topics ?? [];
+    const candidates = topics.filter((topic) => !baseline.has(topic.name));
+    if (candidates.length === 1) {
+      return { outputTopic: candidates[0]!, schemaName: candidates[0]!.schemaName };
+    }
+    if (candidates.length > 1) {
+      throw new Error(
+        `ambiguous script output topics: ${candidates.map((topic) => topic.name).join(", ")}`,
+      );
+    }
+    const errorDiagnostics = (deps.getScriptState(RUN_SCRIPT_ID)?.diagnostics ?? []).filter(
+      (diagnostic) => diagnostic.severity === DIAGNOSTIC_SEVERITY.Error,
+    );
+    if (errorDiagnostics.length > 0) {
+      throw new Error(`script failed: ${errorDiagnostics.map((d) => d.message).join("; ")}`);
+    }
+    if (Date.now() >= deadline) {
+      throw new Error(
+        `timed out after ${timeoutMs}ms waiting for the script output topic to register in the player state`,
+      );
+    }
+    await sleep(intervalMs);
+  }
+}
+
+/**
+ * Executes the `"script.run"` command: write a temp script under the fixed id `mcp-run-script`,
+ * wait for its output topic to register in player state, batch-collect up to maxMessages output
+ * messages through the pipeline's getBatchIterator (the UserScriptPlayer's virtual iterator needs
+ * no panel subscriptions), read back logs/diagnostics, and restore the layout in a finally.
+ * Live sources have no getBatchIterator and fail with an explicit error. One run at a time.
+ */
+export async function executeScriptRunCommand(
+  msg: { type: string; payload: unknown },
+  deps: ScriptRunCommandDeps,
+): Promise<unknown> {
+  const { sourceCode, name, maxMessages } = (msg.payload ?? {}) as {
+    sourceCode?: unknown;
+    name?: unknown;
+    maxMessages?: unknown;
+  };
+  if (typeof sourceCode !== "string" || sourceCode.length === 0) {
+    throw new Error("sourceCode must be a non-empty string");
+  }
+  if (name != undefined && (typeof name !== "string" || name.length === 0)) {
+    throw new Error("name must be a non-empty string when provided");
+  }
+  const limit = maxMessages == undefined ? 100 : maxMessages;
+  if (typeof limit !== "number" || !Number.isInteger(limit) || limit < 1) {
+    throw new Error("maxMessages must be a positive integer");
+  }
+  if (scriptRunInFlight) {
+    throw new Error(SCRIPT_RUN_BUSY);
+  }
+  scriptRunInFlight = true;
+  // Restore whatever occupied the reserved id before the run (undefined on a clean layout) so
+  // the finally always returns the layout to its prior state.
+  const previousScript = deps.getUserScripts()[RUN_SCRIPT_ID];
+  // Topics before the script exists — captured before the write so the script's own output topic
+  // can never be part of the baseline.
+  const baseline = new Set(
+    (deps.getPipeline().playerState.activeData?.topics ?? []).map((topic) => topic.name),
+  );
+  try {
+    deps.setUserScripts({ [RUN_SCRIPT_ID]: { name: name ?? RUN_SCRIPT_NAME, sourceCode } });
+
+    const { outputTopic, schemaName } = await pollForOutputTopic(deps, baseline);
+    const iterator = deps.getPipeline().getBatchIterator(outputTopic.name);
+    if (iterator == undefined) {
+      throw new Error(LIVE_BATCH_ERROR);
+    }
+
+    const messages: unknown[] = [];
+    for await (const result of iterator) {
+      if (result.type !== "message-event") {
+        continue; // stamps/alerts are not script output
+      }
+      messages.push(serializeMessage(result.msgEvent));
+      if (messages.length >= limit) {
+        break;
+      }
+    }
+
+    const state = deps.getScriptState(RUN_SCRIPT_ID);
+    const firstMessage = messages[0] as { schemaName?: string } | undefined;
+    return {
+      outputTopic: outputTopic.name,
+      schemaName: schemaName ?? firstMessage?.schemaName,
+      count: messages.length,
+      messages,
+      logs: (state?.logs ?? []).map((log) => ({ source: log.source, value: log.value })),
+      diagnostics: state?.diagnostics ?? [],
+    };
+  } finally {
+    deps.setUserScripts({ [RUN_SCRIPT_ID]: previousScript });
+    scriptRunInFlight = false;
+  }
+}
+
 /** Routes a main-process MCP command to its executor. Task 6+ appends further branches here. */
 export function executeMcpCommand(
   msg: { type: string; payload: unknown },
   ctx: MessagePipelineContext,
   layoutDeps: LayoutCommandDeps,
   scriptDeps: ScriptCommandDeps,
+  scriptRunDeps: ScriptRunCommandDeps,
 ): unknown {
   if (msg.type.startsWith("playback.")) {
     return executePlaybackCommand(msg, ctx);
   }
   if (msg.type.startsWith("layout.")) {
     return executeLayoutCommand(msg, layoutDeps);
+  }
+  if (msg.type === "script.run") {
+    return executeScriptRunCommand(msg, scriptRunDeps);
   }
   if (msg.type.startsWith("script.")) {
     return executeScriptCommand(msg, scriptDeps);
@@ -315,10 +492,15 @@ export function executeMcpCommand(
 export default function McpCommandBridge(): React.JSX.Element | null {
   const desktopBridge = (global as unknown as { desktopBridge?: Desktop }).desktopBridge;
   const getMessagePipeline = useMessagePipelineGetter();
-  // Rendered inside MultiProvider next to LayoutManagerProvider/CurrentLayoutProvider (App's
-  // pipelineAdapters slot), so both contexts are reachable here.
+  // Rendered inside MultiProvider next to LayoutManagerProvider/CurrentLayoutProvider and below
+  // UserScriptStateProvider (App's pipelineAdapters slot), so all three contexts are reachable.
   const layoutManager = useLayoutManager();
   const { setSelectedLayoutId, setUserScripts, getCurrentLayoutState } = useCurrentLayoutActions();
+  // Script run logs/diagnostics: read through a ref so script-state churn never re-registers the
+  // command handler (the effect below doesn't depend on it).
+  const scriptStates = useUserScriptState((state) => state.state.scriptStates);
+  const scriptStatesRef = useRef(scriptStates);
+  scriptStatesRef.current = scriptStates;
 
   useEffect(() => {
     if (desktopBridge == undefined) {
@@ -340,6 +522,14 @@ export default function McpCommandBridge(): React.JSX.Element | null {
                 // documented snapshot getter for async callbacks; avoids re-rendering per change).
                 getUserScripts: () => getCurrentLayoutState().selectedLayout?.data?.userNodes ?? {},
                 setUserScripts,
+              },
+              {
+                getUserScripts: () => getCurrentLayoutState().selectedLayout?.data?.userNodes ?? {},
+                setUserScripts,
+                // Fresh pipeline read per poll tick: playerState.topics changes as the
+                // UserScriptPlayer re-registers the temp script.
+                getPipeline: () => getMessagePipeline(),
+                getScriptState: (scriptId) => scriptStatesRef.current[scriptId],
               },
             ),
           };

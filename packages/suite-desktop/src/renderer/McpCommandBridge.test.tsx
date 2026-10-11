@@ -10,15 +10,19 @@ import CurrentLayoutContext, {
   ICurrentLayout,
 } from "@lichtblick/suite-base/context/CurrentLayoutContext";
 import LayoutManagerContext from "@lichtblick/suite-base/context/LayoutManagerContext";
+import { UserScriptStateProvider } from "@lichtblick/suite-base/context/UserScriptStateContext";
 import type { ILayoutManager } from "@lichtblick/suite-base/services/ILayoutManager";
 import type { Layout } from "@lichtblick/suite-base/services/ILayoutStorage";
-import { PlayerPresence } from "@lichtblick/suite-base/players/types";
+import { PlayerPresence, type Topic } from "@lichtblick/suite-base/players/types";
 import type { UserScripts } from "@lichtblick/suite-base/types/panels";
 
 import McpCommandBridge, {
   executeLayoutCommand,
+  executeMcpCommand,
   executePlaybackCommand,
   executeScriptCommand,
+  executeScriptRunCommand,
+  type ScriptRunCommandDeps,
 } from "./McpCommandBridge";
 import { Desktop } from "../common/types";
 
@@ -95,19 +99,21 @@ describe("McpCommandBridge", () => {
     render(
       <LayoutManagerContext.Provider value={layoutManagerMock}>
         <CurrentLayoutContext.Provider value={currentLayoutMock}>
-          <MockMessagePipelineProvider
-            presence={PlayerPresence.PRESENT}
-            currentTime={{ sec: 5, nsec: 0 }}
-            startTime={{ sec: 0, nsec: 0 }}
-            endTime={{ sec: 10, nsec: 0 }}
-            isPlaying={false}
-            seekPlayback={seekPlayback}
-            startPlayback={startPlayback}
-            pausePlayback={pausePlayback}
-            {...props}
-          >
-            <McpCommandBridge />
-          </MockMessagePipelineProvider>
+          <UserScriptStateProvider>
+            <MockMessagePipelineProvider
+              presence={PlayerPresence.PRESENT}
+              currentTime={{ sec: 5, nsec: 0 }}
+              startTime={{ sec: 0, nsec: 0 }}
+              endTime={{ sec: 10, nsec: 0 }}
+              isPlaying={false}
+              seekPlayback={seekPlayback}
+              startPlayback={startPlayback}
+              pausePlayback={pausePlayback}
+              {...props}
+            >
+              <McpCommandBridge />
+            </MockMessagePipelineProvider>
+          </UserScriptStateProvider>
         </CurrentLayoutContext.Provider>
       </LayoutManagerContext.Provider>,
     );
@@ -313,6 +319,51 @@ describe("McpCommandBridge", () => {
     const reply = lastReply();
     expect(reply.ok).toEqual(true);
     expect(reply.value).toEqual({ id: "mcp-script-1", name: "Foo", created: true });
+  });
+
+  it("routes script.run through the mounted bridge: temp script, live-source error, cleanup", async () => {
+    // The mock pipeline's getBatchIterator is hardcoded to undefined (a live source), so a full
+    // happy-path run is covered at executor level; this checks routing + cleanup through the tree.
+    const tree = (topics: Topic[]) => render(
+      <LayoutManagerContext.Provider value={layoutManagerMock}>
+        <CurrentLayoutContext.Provider value={currentLayoutMock}>
+          <UserScriptStateProvider>
+            <MockMessagePipelineProvider presence={PlayerPresence.PRESENT} topics={topics}>
+              <McpCommandBridge />
+            </MockMessagePipelineProvider>
+          </UserScriptStateProvider>
+        </CurrentLayoutContext.Provider>
+      </LayoutManagerContext.Provider>,
+    );
+
+    const view = tree([{ name: "/base", schemaName: "std/Base" }]);
+    send("script.run", { sourceCode: "export const inputs=[]; export const output='/out';" });
+    // Baseline topics were captured when the command arrived; now the script registers its output.
+    view.rerender(
+      <LayoutManagerContext.Provider value={layoutManagerMock}>
+        <CurrentLayoutContext.Provider value={currentLayoutMock}>
+          <UserScriptStateProvider>
+            <MockMessagePipelineProvider
+              presence={PlayerPresence.PRESENT}
+              topics={[{ name: "/base", schemaName: "std/Base" }, { name: "/out", schemaName: "script" }]}
+            >
+              <McpCommandBridge />
+            </MockMessagePipelineProvider>
+          </UserScriptStateProvider>
+        </CurrentLayoutContext.Provider>
+      </LayoutManagerContext.Provider>,
+    );
+
+    await waitFor(() => { expect(sendMcpResult).toHaveBeenCalled(); });
+    expect(lastReply()).toEqual({ ok: false, error: "live data sources do not support batch script runs" });
+    expect(setUserScripts).toHaveBeenNthCalledWith(1, {
+      "mcp-run-script": {
+        name: "mcp script run",
+        sourceCode: "export const inputs=[]; export const output='/out';",
+      },
+    });
+    expect(setUserScripts).toHaveBeenLastCalledWith({ "mcp-run-script": undefined });
+    view.unmount();
   });
 });
 
@@ -712,5 +763,294 @@ describe("executeScriptCommand", () => {
     expect(() =>
       executeScriptCommand({ type: "script.run", payload: {} }, makeScriptDeps()),
     ).toThrow("unknown");
+  });
+});
+
+
+describe("executeScriptRunCommand", () => {
+  const RUN_ID = "mcp-run-script";
+
+  /** A fake async iterator yielding the given batch-iterator results. */
+  function fakeIterator(results: unknown[], gate?: Promise<void>) {
+    const state = { nextCalls: 0 };
+    const it = {
+      async next(): Promise<IteratorResult<unknown>> {
+        state.nextCalls++;
+        await gate;
+        if (state.nextCalls > results.length) {
+          return { done: true as const, value: undefined };
+        }
+        return { done: false as const, value: results[state.nextCalls - 1]! };
+      },
+      return: jest.fn(async () => ({ done: true as const, value: undefined }) as IteratorResult<unknown>),
+      [Symbol.asyncIterator]() {
+        return it;
+      },
+    };
+    return { it: it as unknown as AsyncIterableIterator<unknown>, state };
+  }
+
+  const msgEvent = (i: number) => ({
+    type: "message-event",
+    msgEvent: {
+      topic: "/script_out",
+      schemaName: "script",
+      receiveTime: { sec: i, nsec: 0 },
+      publishTime: { sec: i, nsec: 1 },
+      sizeInBytes: 8,
+      message: { index: i },
+    },
+  });
+
+  const serialized = (i: number) => ({
+    topic: "/script_out",
+    schemaName: "script",
+    receiveTime: { sec: i, nsec: 0 },
+    publishTime: { sec: i, nsec: 1 },
+    sizeInBytes: 8,
+    message: { index: i },
+  });
+
+  type Wired = {
+    deps: ScriptRunCommandDeps;
+    userNodes: UserScripts;
+    setUserScripts: jest.Mock;
+    topics: Topic[];
+    getBatchIterator: jest.Mock;
+  };
+
+  /**
+   * Deps with a mutable layout + player state. By default, writing the temp script makes the
+   * output topic appear in player state (standing in for UserScriptPlayer re-registration);
+   * override onWriteScript for timeout/ambiguity cases, iterator for the batch path.
+   */
+  function makeWired(
+    opts: {
+      onWriteScript?: () => void;
+      iterator?: (topic: string) => AsyncIterableIterator<unknown> | undefined;
+      scriptState?: { diagnostics: unknown[]; logs: unknown[] };
+      pollIntervalMs?: number;
+      pollTimeoutMs?: number;
+    } = {},
+  ): Wired {
+    const userNodes: UserScripts = {};
+    const setUserScripts = jest.fn((payload: Partial<UserScripts>) => {
+      for (const [key, value] of Object.entries(payload)) {
+        if (value == undefined) {
+          delete userNodes[key];
+        } else {
+          userNodes[key] = value;
+        }
+      }
+      if (payload[RUN_ID] != undefined) {
+        (opts.onWriteScript ?? (() => topics.push({ name: "/script_out", schemaName: "script" })))();
+      }
+    });
+    const topics: Topic[] = [{ name: "/base", schemaName: "std/Base" }];
+    const getBatchIterator = jest.fn((topic: string) => opts.iterator?.(topic));
+    const deps: ScriptRunCommandDeps = {
+      getUserScripts: () => userNodes,
+      setUserScripts,
+      getPipeline: () =>
+        ({
+          playerState: { presence: PlayerPresence.PRESENT, activeData: { topics } },
+          getBatchIterator,
+        }) as unknown as ReturnType<ScriptRunCommandDeps["getPipeline"]>,
+      getScriptState: (scriptId) =>
+        (scriptId === RUN_ID ? opts.scriptState : undefined) as ReturnType<
+          ScriptRunCommandDeps["getScriptState"]
+        >,
+      pollIntervalMs: opts.pollIntervalMs,
+      pollTimeoutMs: opts.pollTimeoutMs,
+    };
+    return { deps, userNodes, setUserScripts, topics, getBatchIterator };
+  }
+
+  const defaultIterator = (results: unknown[], gate?: Promise<void>) => (topic: string) =>
+    topic === "/script_out" ? fakeIterator(results, gate).it : undefined;
+
+  const run = (payload: unknown, deps: ScriptRunCommandDeps) =>
+    executeScriptRunCommand({ type: "script.run", payload }, deps);
+
+  it("writes the temp script, waits for the output topic, and returns the collected messages", async () => {
+    const wired = makeWired({
+      iterator: defaultIterator([
+        { type: "stamp", stamp: { sec: 0, nsec: 0 } }, // stamps are not script output
+        msgEvent(0),
+        msgEvent(1),
+        msgEvent(2),
+      ]),
+    });
+    const value = await run({ sourceCode: "// x" }, wired.deps);
+    expect(value).toEqual({
+      outputTopic: "/script_out",
+      schemaName: "script",
+      count: 3,
+      messages: [serialized(0), serialized(1), serialized(2)],
+      logs: [],
+      diagnostics: [],
+    });
+    // Temp script written under the fixed id, then removed in the finally.
+    expect(wired.setUserScripts).toHaveBeenNthCalledWith(1, {
+      [RUN_ID]: { name: "mcp script run", sourceCode: "// x" },
+    });
+    expect(wired.setUserScripts).toHaveBeenLastCalledWith({ [RUN_ID]: undefined });
+    expect(wired.userNodes[RUN_ID]).toEqual(undefined);
+  });
+
+  it("uses the optional name for the temp script", async () => {
+    const wired = makeWired({ iterator: defaultIterator([msgEvent(0)]) });
+    await run({ sourceCode: "// x", name: "Foo" }, wired.deps);
+    expect(wired.setUserScripts).toHaveBeenNthCalledWith(1, {
+      [RUN_ID]: { name: "Foo", sourceCode: "// x" },
+    });
+  });
+
+  it("truncates at maxMessages and stops pulling from the iterator", async () => {
+    const it = fakeIterator([msgEvent(0), msgEvent(1), msgEvent(2), msgEvent(3), msgEvent(4)]);
+    const wired = makeWired({ iterator: () => it.it });
+    const value = await run({ sourceCode: "// x", maxMessages: 2 }, wired.deps);
+    expect(value).toEqual(
+      expect.objectContaining({ count: 2, messages: [serialized(0), serialized(1)] }),
+    );
+    expect(it.state.nextCalls).toEqual(2); // messages beyond maxMessages are not collected
+    expect(it.it.return).toHaveBeenCalled(); // for-await break releases the iterator
+  });
+
+  it("rejects live sources with the exact error and cleans up the temp script", async () => {
+    const wired = makeWired({ iterator: () => undefined });
+    await expect(run({ sourceCode: "// x" }, wired.deps)).rejects.toThrow(
+      "live data sources do not support batch script runs",
+    );
+    expect(wired.setUserScripts).toHaveBeenLastCalledWith({ [RUN_ID]: undefined });
+    expect(wired.userNodes[RUN_ID]).toEqual(undefined);
+  });
+
+  it("fails with a timeout error naming what was awaited and cleans up", async () => {
+    const wired = makeWired({ onWriteScript: () => {}, pollIntervalMs: 2, pollTimeoutMs: 10 });
+    await expect(run({ sourceCode: "// x" }, wired.deps)).rejects.toThrow(
+      /timed out after 10ms waiting for the script output topic/,
+    );
+    expect(wired.setUserScripts).toHaveBeenLastCalledWith({ [RUN_ID]: undefined });
+    expect(wired.userNodes[RUN_ID]).toEqual(undefined);
+  });
+
+  it("fails with a discriminating error when multiple new topics appear", async () => {
+    const wired = makeWired({
+      onWriteScript: () => {
+        wired.topics.push({ name: "/a", schemaName: "script" }, { name: "/b", schemaName: "script" });
+      },
+    });
+    await expect(run({ sourceCode: "// x" }, wired.deps)).rejects.toThrow(/ambiguous.*\/a.*\/b/);
+    expect(wired.setUserScripts).toHaveBeenLastCalledWith({ [RUN_ID]: undefined });
+  });
+
+  it("returns script logs and diagnostics from the user script state", async () => {
+    const wired = makeWired({
+      iterator: defaultIterator([msgEvent(0)]),
+      scriptState: {
+        diagnostics: [{ severity: 4, message: "unused variable", source: "Typescript", code: 1 }],
+        logs: [{ source: "processMessage", value: { hello: 1 } }],
+      },
+    });
+    const value = (await run({ sourceCode: "// x" }, wired.deps)) as Record<string, unknown>;
+    expect(value["logs"]).toEqual([{ source: "processMessage", value: { hello: 1 } }]);
+    expect(value["diagnostics"]).toEqual([
+      { severity: 4, message: "unused variable", source: "Typescript", code: 1 },
+    ]);
+  });
+
+  it("fails fast with the script diagnostics when registration reports errors", async () => {
+    const wired = makeWired({
+      // No topic ever appears; without diagnostics this would hit the (long) poll cap.
+      onWriteScript: () => {},
+      scriptState: {
+        diagnostics: [{ severity: 8, message: "Cannot find name 'florble'", source: "Typescript", code: 2 }],
+        logs: [],
+      },
+      pollIntervalMs: 1,
+      pollTimeoutMs: 60_000,
+    });
+    await expect(run({ sourceCode: "florble" }, wired.deps)).rejects.toThrow(/florble/);
+    expect(wired.setUserScripts).toHaveBeenLastCalledWith({ [RUN_ID]: undefined });
+  });
+
+  it("cleans up when the batch iterator throws mid-collection", async () => {
+    let calls = 0;
+    const throwing = {
+      async next(): Promise<IteratorResult<unknown>> {
+        if (calls++ === 0) {
+          return { done: false as const, value: msgEvent(0) };
+        }
+        throw new Error("iterator exploded");
+      },
+      [Symbol.asyncIterator]() {
+        return throwing as unknown as AsyncIterableIterator<unknown>;
+      },
+    };
+    const wired = makeWired({
+      iterator: () => throwing as unknown as AsyncIterableIterator<unknown>,
+    });
+    await expect(run({ sourceCode: "// x", maxMessages: 10 }, wired.deps)).rejects.toThrow(
+      "iterator exploded",
+    );
+    expect(wired.setUserScripts).toHaveBeenLastCalledWith({ [RUN_ID]: undefined });
+    expect(wired.userNodes[RUN_ID]).toEqual(undefined);
+  });
+
+  it("rejects a concurrent second run while the first is in flight, first unaffected", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const wired = makeWired({ iterator: defaultIterator([msgEvent(0), msgEvent(1)], gate) });
+    const first = run({ sourceCode: "// x" }, wired.deps);
+    // Wait until the first run is parked inside the batch iterator.
+    await waitFor(() => { expect(wired.getBatchIterator).toHaveBeenCalledWith("/script_out"); });
+    await expect(run({ sourceCode: "// y" }, wired.deps)).rejects.toThrow(
+      "a script run is already in progress",
+    );
+    release();
+    const value = (await first) as Record<string, unknown>;
+    expect(value["count"]).toEqual(2);
+    // The busy rejection happened before any write; only the first run wrote and cleaned up.
+    expect(wired.setUserScripts).toHaveBeenCalledTimes(2);
+  });
+
+  it("restores a pre-existing script that occupied the reserved id", async () => {
+    const wired = makeWired({ iterator: defaultIterator([msgEvent(0)]) });
+    const original = { name: "User script", sourceCode: "// user" };
+    wired.userNodes[RUN_ID] = original;
+    await run({ sourceCode: "// x" }, wired.deps);
+    expect(wired.setUserScripts).toHaveBeenLastCalledWith({ [RUN_ID]: original });
+    expect(wired.userNodes[RUN_ID]).toEqual(original);
+  });
+
+  it("rejects invalid payloads without touching the layout", async () => {
+    for (const payload of [
+      {},
+      { sourceCode: "" },
+      { sourceCode: 42 },
+      { sourceCode: "// x", maxMessages: 0 },
+      { sourceCode: "// x", maxMessages: 1.5 },
+      { sourceCode: "// x", name: 7 },
+    ]) {
+      const wired = makeWired();
+      await expect(run(payload, wired.deps)).rejects.toThrow();
+      expect(wired.setUserScripts).not.toHaveBeenCalled();
+    }
+  });
+
+  it("executeMcpCommand routes script.run to the run executor (not script CRUD)", async () => {
+    const wired = makeWired({ iterator: defaultIterator([msgEvent(0)]) });
+    const ctx = { playerState: {}, getBatchIterator: jest.fn() } as unknown as MessagePipelineContext;
+    const value = (await executeMcpCommand(
+      { type: "script.run", payload: { sourceCode: "// x" } },
+      ctx,
+      { layoutManager: {} as unknown as ILayoutManager, setSelectedLayoutId: jest.fn() },
+      { getUserScripts: wired.deps.getUserScripts, setUserScripts: wired.deps.setUserScripts },
+      wired.deps,
+    )) as Record<string, unknown>;
+    expect(value["outputTopic"]).toEqual("/script_out");
   });
 });
