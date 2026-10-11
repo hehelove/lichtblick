@@ -87,14 +87,18 @@ describe("McpServerSettings component", () => {
     expect(updateMcpServer).not.toHaveBeenCalled();
   });
 
-  it("writes MCP_ENABLED when the enable toggle changes", () => {
+  it("writes MCP_ENABLED, restarts via updateMcpServer, and shows the returned token", async () => {
     configValues[AppSetting.MCP_ENABLED] = false;
+    updateMcpServer.mockResolvedValue({ enabled: true, port: 7333, token: "boot-token" });
 
     render(<McpServerSettings />);
 
     fireEvent.click(screen.getByRole("checkbox"));
 
     expect(setters[AppSetting.MCP_ENABLED]!).toHaveBeenCalledWith(true);
+    // The restart call happens after the setting write and surfaces the first-enable token.
+    expect(await screen.findByDisplayValue("boot-token")).toBeInTheDocument();
+    expect(updateMcpServer).toHaveBeenCalledWith();
   });
 
   it("regenerates the token via updateMcpServer and displays the returned token", async () => {
