@@ -41,8 +41,13 @@ function targetWebContentsId(): number | undefined {
 
 app.on("browser-window-focus", (_ev, browserWindow) => {
   // Ignore non-Studio windows (e.g. detached DevTools), like the app-menu focus handler does.
-  if (StudioWindow.fromWebContentsId(browserWindow.webContents.id) != undefined) {
-    focusedWebContentsId = browserWindow.webContents.id;
+  const id = browserWindow.webContents.id;
+  if (StudioWindow.fromWebContentsId(id) != undefined && id !== focusedWebContentsId) {
+    focusedWebContentsId = id;
+    // The cached snapshot belongs to the previously focused window; an idle newly focused
+    // window pushes nothing until its state changes, so drop the stale data instead of
+    // serving it indefinitely.
+    snapshot = EMPTY_SNAPSHOT;
   }
 });
 

@@ -197,4 +197,41 @@ describe("mcp dispatch", () => {
     emitIpc("mcp-state-snapshot", { sender: { id: 2 } }, fromWindowTwo);
     expect(dispatch.getMcpState()).toEqual(fromWindowTwo);
   });
+
+  it("drops the cached snapshot when focus moves to a different window", async () => {
+    const dispatch = await loadDispatch();
+    makeWindow(1);
+    makeWindow(2);
+    emitAppEvent("browser-window-focus", undefined, { webContents: { id: 1 } });
+
+    const fromWindowOne = {
+      presence: "PRESENT",
+      playerName: "one",
+      topics: [{ name: "/one", schemaName: undefined }],
+      datatypes: {},
+    };
+    emitIpc("mcp-state-snapshot", { sender: { id: 1 } }, fromWindowOne);
+    expect(dispatch.getMcpState()).toEqual(fromWindowOne);
+
+    // An idle newly focused window pushes nothing until its state changes; serving window
+    // one's cached data indefinitely would be stale, so the focus switch must drop it.
+    emitAppEvent("browser-window-focus", undefined, { webContents: { id: 2 } });
+    expect(dispatch.getMcpState()).toEqual({
+      presence: "NOT_PRESENT",
+      playerName: undefined,
+      topics: [],
+      datatypes: {},
+    });
+
+    // Refocusing the same window keeps the fresh snapshot (no spurious drop).
+    const fromWindowTwo = {
+      presence: "PRESENT",
+      playerName: "two",
+      topics: [{ name: "/two", schemaName: undefined }],
+      datatypes: {},
+    };
+    emitIpc("mcp-state-snapshot", { sender: { id: 2 } }, fromWindowTwo);
+    emitAppEvent("browser-window-focus", undefined, { webContents: { id: 2 } });
+    expect(dispatch.getMcpState()).toEqual(fromWindowTwo);
+  });
 });

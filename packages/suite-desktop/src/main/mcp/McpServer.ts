@@ -113,19 +113,20 @@ export class McpServer {
     }
     this.#started = true;
 
-    const settings = this.#readSettings();
-    if (!settings.enabled) {
-      log.info("MCP server is disabled");
-      return;
-    }
-
     try {
+      const settings = this.#readSettings();
+      if (!settings.enabled) {
+        log.info("MCP server is disabled");
+        return;
+      }
+
       await this.#listen(settings);
       log.info(`MCP server listening on http://127.0.0.1:${settings.port}/mcp`);
     } catch (err: unknown) {
-      // A busy port or another listen failure must not take the app down.
+      // A busy port, an unreadable settings file, or any other start failure must not take the
+      // app down — boot fire-and-forgets start(), so an escape here is an unhandled rejection.
       this.#started = false;
-      log.error(`Failed to start MCP server on port ${settings.port}: ${err}`);
+      log.error(`Failed to start MCP server: ${err}`);
     }
   }
 

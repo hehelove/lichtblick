@@ -259,6 +259,30 @@ describe("McpServer", () => {
     await server.stop();
   });
 
+  it("survives a settings read failure without rejecting and allows a later start", async () => {
+    let fail = true;
+    const server = new McpServer({
+      readSettings: () => {
+        if (fail) {
+          throw new Error("read EACCES");
+        }
+        return { enabled: true, token: TOKEN, port };
+      },
+    });
+
+    // Boot fire-and-forgets start(); a throwing settings read must become a logged error,
+    // not an unhandled rejection, and must not wedge #started.
+    await expect(server.start()).resolves.toBeUndefined();
+    expect(server.isListening()).toBe(false);
+    expect(console.error).toHaveBeenCalled();
+    (console.error as jest.Mock).mockReset();
+
+    fail = false;
+    await server.start(); // the failed attempt reset #started, so the retry starts
+    expect(server.isListening()).toBe(true);
+    await server.stop();
+  });
+
   it("releases the port on stop()", async () => {
     const server = makeServer();
     await server.start();
