@@ -6,9 +6,15 @@ import { render, waitFor } from "@testing-library/react";
 
 import type { MessagePipelineContext } from "@lichtblick/suite-base/components/MessagePipeline";
 import MockMessagePipelineProvider from "@lichtblick/suite-base/components/MessagePipeline/MockMessagePipelineProvider";
+import CurrentLayoutContext, {
+  ICurrentLayout,
+} from "@lichtblick/suite-base/context/CurrentLayoutContext";
+import LayoutManagerContext from "@lichtblick/suite-base/context/LayoutManagerContext";
+import type { ILayoutManager } from "@lichtblick/suite-base/services/ILayoutManager";
+import type { Layout } from "@lichtblick/suite-base/services/ILayoutStorage";
 import { PlayerPresence } from "@lichtblick/suite-base/players/types";
 
-import McpCommandBridge, { executePlaybackCommand } from "./McpCommandBridge";
+import McpCommandBridge, { executeLayoutCommand, executePlaybackCommand } from "./McpCommandBridge";
 import { Desktop } from "../common/types";
 
 type McpCommandMsg = { id: number; type: string; payload: unknown };
@@ -24,10 +30,31 @@ const sendMcpResult = jest.fn();
 const mockBridge = { onMcpCommand, sendMcpResult } as unknown as Desktop;
 const globalWithBridge = global as unknown as { desktopBridge?: Desktop };
 
+function makeLayoutData(overrides: Record<string, unknown> = {}) {
+  return { configById: {}, globalVariables: {}, playbackConfig: { speed: 1 }, version: 1, ...overrides };
+}
+
+function makeLayout(overrides: Record<string, unknown> = {}): Layout {
+  return {
+    id: "layout-1",
+    name: "Foo",
+    permission: "CREATOR_WRITE",
+    baseline: { data: makeLayoutData(), savedAt: "2026-01-02T03:04:05.000Z" },
+    working: undefined,
+    syncInfo: undefined,
+    ...overrides,
+  } as unknown as Layout;
+}
+
 describe("McpCommandBridge", () => {
   const seekPlayback = jest.fn();
   const startPlayback = jest.fn();
   const pausePlayback = jest.fn();
+  const getLayouts = jest.fn();
+  const saveNewLayout = jest.fn();
+  const setSelectedLayoutId = jest.fn();
+  const layoutManagerMock = { getLayouts, saveNewLayout } as unknown as ILayoutManager;
+  const currentLayoutMock = { actions: { setSelectedLayoutId } } as unknown as ICurrentLayout;
 
   beforeEach(() => {
     handler = undefined;
@@ -36,6 +63,9 @@ describe("McpCommandBridge", () => {
     seekPlayback.mockClear();
     startPlayback.mockClear();
     pausePlayback.mockClear();
+    getLayouts.mockReset();
+    saveNewLayout.mockReset();
+    setSelectedLayoutId.mockReset();
     globalWithBridge.desktopBridge = mockBridge;
   });
 
@@ -45,19 +75,23 @@ describe("McpCommandBridge", () => {
 
   const renderBridge = (props: Record<string, unknown> = {}) =>
     render(
-      <MockMessagePipelineProvider
-        presence={PlayerPresence.PRESENT}
-        currentTime={{ sec: 5, nsec: 0 }}
-        startTime={{ sec: 0, nsec: 0 }}
-        endTime={{ sec: 10, nsec: 0 }}
-        isPlaying={false}
-        seekPlayback={seekPlayback}
-        startPlayback={startPlayback}
-        pausePlayback={pausePlayback}
-        {...props}
-      >
-        <McpCommandBridge />
-      </MockMessagePipelineProvider>,
+      <LayoutManagerContext.Provider value={layoutManagerMock}>
+        <CurrentLayoutContext.Provider value={currentLayoutMock}>
+          <MockMessagePipelineProvider
+            presence={PlayerPresence.PRESENT}
+            currentTime={{ sec: 5, nsec: 0 }}
+            startTime={{ sec: 0, nsec: 0 }}
+            endTime={{ sec: 10, nsec: 0 }}
+            isPlaying={false}
+            seekPlayback={seekPlayback}
+            startPlayback={startPlayback}
+            pausePlayback={pausePlayback}
+            {...props}
+          >
+            <McpCommandBridge />
+          </MockMessagePipelineProvider>
+        </CurrentLayoutContext.Provider>
+      </LayoutManagerContext.Provider>,
     );
 
   const send = (type: string, payload: unknown) => {
@@ -182,6 +216,58 @@ describe("McpCommandBridge", () => {
     expect(reply.ok).toEqual(false);
     expect(reply.error).toContain("unknown");
   });
+
+  it("routes layout.list_layouts through the mounted bridge to the layout manager", async () => {
+    getLayouts.mockResolvedValue([
+      makeLayout(),
+      makeLayout({ id: "layout-2", name: "Bar", working: { data: makeLayoutData(), savedAt: "2026-02-03T04:05:06.000Z" } }),
+    ]);
+    renderBridge();
+    send("layout.list_layouts", {});
+    await waitFor(() => { expect(sendMcpResult).toHaveBeenCalled(); });
+    const reply = lastReply();
+    expect(reply.ok).toEqual(true);
+    expect(reply.value).toEqual({
+      layouts: [
+        { id: "layout-1", name: "Foo", updatedAt: "2026-01-02T03:04:05.000Z" },
+        { id: "layout-2", name: "Bar", updatedAt: "2026-02-03T04:05:06.000Z" },
+      ],
+    });
+  });
+
+  it("full stack: load_layout by name selects the matching layout via the bridge", async () => {
+    getLayouts.mockResolvedValue([makeLayout()]);
+    renderBridge();
+    send("layout.load_layout", { name: "Foo" });
+    await waitFor(() => { expect(setSelectedLayoutId).toHaveBeenCalled(); });
+    expect(setSelectedLayoutId).toHaveBeenCalledWith("layout-1");
+    expect(lastReply()).toEqual({ ok: true, value: { id: "layout-1", name: "Foo" } });
+  });
+
+  it("full stack: load_layout with layout_json validates, saves, and selects through the bridge", async () => {
+    const data = makeLayoutData({ version: 1 });
+    saveNewLayout.mockResolvedValue(makeLayout({ id: "layout-new", name: "imported-layout-1" }));
+    renderBridge();
+    send("layout.load_layout", { layout_json: JSON.stringify(data) });
+    await waitFor(() => { expect(setSelectedLayoutId).toHaveBeenCalled(); });
+    expect(saveNewLayout).toHaveBeenCalledWith(
+      expect.objectContaining({ data, permission: "CREATOR_WRITE" }),
+    );
+    expect(setSelectedLayoutId).toHaveBeenCalledWith("layout-new");
+    expect(lastReply()).toEqual({ ok: true, value: { id: "layout-new", name: "imported-layout-1" } });
+  });
+
+  it("full stack: load_layout with an invalid layout_json replies with the field-level error", async () => {
+    renderBridge();
+    send("layout.load_layout", { layout_json: JSON.stringify({ nope: true }) });
+    await waitFor(() => { expect(sendMcpResult).toHaveBeenCalled(); });
+    const reply = lastReply();
+    expect(reply.ok).toEqual(false);
+    expect(reply.error).toContain('"configById"');
+    expect(reply.error).toContain('"globalVariables"');
+    expect(reply.error).toContain('"playbackConfig"');
+    expect(saveNewLayout).not.toHaveBeenCalled();
+  });
 });
 
 describe("executePlaybackCommand", () => {
@@ -286,5 +372,154 @@ describe("executePlaybackCommand", () => {
         makeCtx({ seekPlayback: undefined }),
       ),
     ).toThrow("data source does not support playback control");
+  });
+});
+
+describe("executeLayoutCommand", () => {
+  const getLayouts = jest.fn();
+  const saveNewLayout = jest.fn();
+  const setSelectedLayoutId = jest.fn();
+  const deps = {
+    layoutManager: { getLayouts, saveNewLayout } as unknown as ILayoutManager,
+    setSelectedLayoutId,
+  };
+
+  beforeEach(() => {
+    getLayouts.mockReset();
+    saveNewLayout.mockReset();
+    setSelectedLayoutId.mockReset();
+  });
+
+  it("list_layouts maps layouts to id/name/updatedAt, preferring the working copy's save time", async () => {
+    getLayouts.mockResolvedValue([
+      makeLayout(),
+      makeLayout({
+        id: "layout-2",
+        name: "Bar",
+        working: { data: makeLayoutData(), savedAt: "2026-02-03T04:05:06.000Z" },
+      }),
+    ]);
+    const value = await executeLayoutCommand({ type: "layout.list_layouts", payload: {} }, deps);
+    expect(value).toEqual({
+      layouts: [
+        { id: "layout-1", name: "Foo", updatedAt: "2026-01-02T03:04:05.000Z" },
+        { id: "layout-2", name: "Bar", updatedAt: "2026-02-03T04:05:06.000Z" },
+      ],
+    });
+  });
+
+  it("get_layout returns the working copy when present, else the baseline", async () => {
+    const workingData = makeLayoutData({ version: 1 });
+    const baselineData = makeLayoutData({ version: 0 });
+    getLayouts.mockResolvedValue([
+      makeLayout({ working: { data: workingData, savedAt: undefined } }),
+      makeLayout({ id: "layout-2", name: "Bar", baseline: { data: baselineData, savedAt: undefined } }),
+    ]);
+    await expect(
+      executeLayoutCommand({ type: "layout.get_layout", payload: { name: "Foo" } }, deps),
+    ).resolves.toEqual(workingData);
+    await expect(
+      executeLayoutCommand({ type: "layout.get_layout", payload: { name: "Bar" } }, deps),
+    ).resolves.toEqual(baselineData);
+  });
+
+  it("get_layout throws for an unknown name", async () => {
+    getLayouts.mockResolvedValue([makeLayout()]);
+    await expect(
+      executeLayoutCommand({ type: "layout.get_layout", payload: { name: "Nope" } }, deps),
+    ).rejects.toThrow("layout not found: Nope");
+  });
+
+  it("load_layout with valid layout_json validates, saves, and selects the new layout", async () => {
+    const data = makeLayoutData({ version: 1 });
+    saveNewLayout.mockResolvedValue(makeLayout({ id: "layout-new", name: "imported-layout-x" }));
+    const value = await executeLayoutCommand(
+      { type: "layout.load_layout", payload: { layout_json: JSON.stringify(data) } },
+      deps,
+    );
+    expect(saveNewLayout).toHaveBeenCalledWith(
+      expect.objectContaining({ data, permission: "CREATOR_WRITE" }),
+    );
+    expect(setSelectedLayoutId).toHaveBeenCalledWith("layout-new");
+    expect(value).toEqual({ id: "layout-new", name: "imported-layout-x" });
+  });
+
+  it("load_layout accepts a layout_json object without re-parsing", async () => {
+    const data = makeLayoutData();
+    saveNewLayout.mockResolvedValue(makeLayout({ id: "layout-new" }));
+    await executeLayoutCommand({ type: "layout.load_layout", payload: { layout_json: data } }, deps);
+    expect(saveNewLayout).toHaveBeenCalledWith(expect.objectContaining({ data }));
+  });
+
+  it("load_layout passes the field-level validation error through", async () => {
+    await expect(
+      executeLayoutCommand(
+        { type: "layout.load_layout", payload: { layout_json: JSON.stringify({ nope: true }) } },
+        deps,
+      ),
+    ).rejects.toThrow('missing or invalid fields: "configById", "globalVariables", "playbackConfig"');
+    expect(saveNewLayout).not.toHaveBeenCalled();
+  });
+
+  it("load_layout passes a JSON parse error through", async () => {
+    await expect(
+      executeLayoutCommand(
+        { type: "layout.load_layout", payload: { layout_json: "{not json" } },
+        deps,
+      ),
+    ).rejects.toThrow();
+    expect(saveNewLayout).not.toHaveBeenCalled();
+  });
+
+  it("load_layout by name selects the matching layout", async () => {
+    getLayouts.mockResolvedValue([makeLayout()]);
+    const value = await executeLayoutCommand(
+      { type: "layout.load_layout", payload: { name: "Foo" } },
+      deps,
+    );
+    expect(setSelectedLayoutId).toHaveBeenCalledWith("layout-1");
+    expect(saveNewLayout).not.toHaveBeenCalled();
+    expect(value).toEqual({ id: "layout-1", name: "Foo" });
+  });
+
+  it("load_layout by name throws for an unknown name", async () => {
+    getLayouts.mockResolvedValue([makeLayout()]);
+    await expect(
+      executeLayoutCommand({ type: "layout.load_layout", payload: { name: "Nope" } }, deps),
+    ).rejects.toThrow("layout not found: Nope");
+    expect(setSelectedLayoutId).not.toHaveBeenCalled();
+  });
+
+  it("load_layout errors when the layout_json version exceeds the supported version", async () => {
+    await expect(
+      executeLayoutCommand(
+        { type: "layout.load_layout", payload: { layout_json: JSON.stringify(makeLayoutData({ version: 99 })) } },
+        deps,
+      ),
+    ).rejects.toThrow("version");
+    expect(saveNewLayout).not.toHaveBeenCalled();
+  });
+
+  it("load_layout by name errors when the stored version exceeds the supported version", async () => {
+    getLayouts.mockResolvedValue([makeLayout({ baseline: { data: makeLayoutData({ version: 99 }), savedAt: undefined } })]);
+    await expect(
+      executeLayoutCommand({ type: "layout.load_layout", payload: { name: "Foo" } }, deps),
+    ).rejects.toThrow("version");
+    expect(setSelectedLayoutId).not.toHaveBeenCalled();
+  });
+
+  it("load_layout errors when neither parameter is provided", async () => {
+    await expect(
+      executeLayoutCommand({ type: "layout.load_layout", payload: {} }, deps),
+    ).rejects.toThrow("provide exactly one of name or layout_json");
+  });
+
+  it("load_layout errors when both parameters are provided", async () => {
+    await expect(
+      executeLayoutCommand(
+        { type: "layout.load_layout", payload: { name: "Foo", layout_json: "{}" } },
+        deps,
+      ),
+    ).rejects.toThrow("provide exactly one of name or layout_json");
   });
 });

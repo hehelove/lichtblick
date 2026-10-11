@@ -22,6 +22,7 @@ import installChromeExtensions from "./installChromeExtensions";
 import { McpServer } from "./mcp/McpServer";
 import { getMcpState, sendCommandToFocusedWindow } from "./mcp/dispatch";
 import { registerDataTools } from "./mcp/tools/dataTools";
+import { registerLayoutTools } from "./mcp/tools/layoutTools";
 import { registerPlaybackTools } from "./mcp/tools/playbackTools";
 import { parseCLIFlags } from "./parseCLIFlags";
 import {
@@ -337,6 +338,7 @@ export async function main(): Promise<void> {
 
     registerDataTools(McpServer.Instance(), { getState: getMcpState });
     registerPlaybackTools(McpServer.Instance(), { sendCommand: sendCommandToFocusedWindow });
+    registerLayoutTools(McpServer.Instance(), { sendCommand: sendCommandToFocusedWindow });
     void McpServer.Instance().start();
   });
 

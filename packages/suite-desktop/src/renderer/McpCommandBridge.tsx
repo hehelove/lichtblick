@@ -12,6 +12,14 @@ import {
   MessagePipelineContext,
   useMessagePipelineGetter,
 } from "@lichtblick/suite-base/components/MessagePipeline";
+import {
+  LayoutID,
+  useCurrentLayoutActions,
+} from "@lichtblick/suite-base/context/CurrentLayoutContext";
+import { useLayoutManager } from "@lichtblick/suite-base/context/LayoutManagerContext";
+import type { ILayoutManager } from "@lichtblick/suite-base/services/ILayoutManager";
+import { MAX_SUPPORTED_LAYOUT_VERSION } from "@lichtblick/suite-base/providers/CurrentLayoutProvider/constants";
+import { validateLayoutData } from "@lichtblick/suite-base/util/layout";
 
 import { Desktop } from "../common/types";
 
@@ -119,13 +127,95 @@ export function executePlaybackCommand(
   }
 }
 
-/** Routes a main-process MCP command to its executor. Task 5+ appends further branches here. */
+/** Collaborators needed to execute `"layout.*"` commands (all reachable from the pipelineAdapters slot). */
+export type LayoutCommandDeps = {
+  layoutManager: Pick<ILayoutManager, "getLayouts" | "saveNewLayout">;
+  setSelectedLayoutId: (id: LayoutID) => void | Promise<void>;
+};
+
+function assertSupportedVersion(version: number | undefined): void {
+  if (version != undefined && version > MAX_SUPPORTED_LAYOUT_VERSION) {
+    throw new Error(
+      `layout version ${version} is not supported (maximum supported layout version is ${MAX_SUPPORTED_LAYOUT_VERSION})`,
+    );
+  }
+}
+
+/**
+ * Executes `"layout.*"` commands against the layout manager / current layout. Mirrors the flows the
+ * workspace UI already uses: getLayouts for listings, setSelectedLayoutId for selection, and the
+ * useLayoutTransfer parseAndInstallLayout flow (validate → saveNewLayout → select) for installs.
+ * Throws on invalid input; the caller turns a thrown error into an `{ok: false}` reply.
+ */
+export async function executeLayoutCommand(
+  msg: { type: string; payload: unknown },
+  deps: LayoutCommandDeps,
+): Promise<unknown> {
+  switch (msg.type) {
+    case "layout.list_layouts": {
+      const layouts = await deps.layoutManager.getLayouts();
+      return {
+        layouts: layouts.map((layout) => ({
+          id: layout.id,
+          name: layout.name,
+          updatedAt: layout.working?.savedAt ?? layout.baseline.savedAt,
+        })),
+      };
+    }
+
+    case "layout.get_layout": {
+      const { name } = msg.payload as { name: string };
+      const layout = (await deps.layoutManager.getLayouts()).find((l) => l.name === name);
+      if (layout == undefined) {
+        throw new Error(`layout not found: ${name}`);
+      }
+      return layout.working?.data ?? layout.baseline.data;
+    }
+
+    case "layout.load_layout": {
+      const { name, layout_json } = msg.payload as { name?: string; layout_json?: unknown };
+      if ((name == undefined) === (layout_json == undefined)) {
+        throw new Error("provide exactly one of name or layout_json");
+      }
+      if (layout_json != undefined) {
+        // parseAndInstallLayout-equivalent flow: parse (if a string) → validate → save → select.
+        const parsedState: unknown =
+          typeof layout_json === "string" ? JSON.parse(layout_json) : layout_json;
+        const data = validateLayoutData(parsedState);
+        assertSupportedVersion(data.version);
+        const newLayout = await deps.layoutManager.saveNewLayout({
+          name: `imported-layout-${new Date().toISOString()}`,
+          data,
+          permission: "CREATOR_WRITE",
+        });
+        await deps.setSelectedLayoutId(newLayout.id);
+        return { id: newLayout.id, name: newLayout.name };
+      }
+      const layout = (await deps.layoutManager.getLayouts()).find((l) => l.name === name);
+      if (layout == undefined) {
+        throw new Error(`layout not found: ${name!}`);
+      }
+      assertSupportedVersion((layout.working?.data ?? layout.baseline.data).version);
+      await deps.setSelectedLayoutId(layout.id);
+      return { id: layout.id, name: layout.name };
+    }
+
+    default:
+      throw new Error(`unknown layout command: ${msg.type}`);
+  }
+}
+
+/** Routes a main-process MCP command to its executor. Task 6+ appends further branches here. */
 export function executeMcpCommand(
   msg: { type: string; payload: unknown },
   ctx: MessagePipelineContext,
+  layoutDeps: LayoutCommandDeps,
 ): unknown {
   if (msg.type.startsWith("playback.")) {
     return executePlaybackCommand(msg, ctx);
+  }
+  if (msg.type.startsWith("layout.")) {
+    return executeLayoutCommand(msg, layoutDeps);
   }
   throw new Error(`unknown mcp command: ${msg.type}`);
 }
@@ -138,6 +228,10 @@ export function executeMcpCommand(
 export default function McpCommandBridge(): React.JSX.Element | null {
   const desktopBridge = (global as unknown as { desktopBridge?: Desktop }).desktopBridge;
   const getMessagePipeline = useMessagePipelineGetter();
+  // Rendered inside MultiProvider next to LayoutManagerProvider/CurrentLayoutProvider (App's
+  // pipelineAdapters slot), so both contexts are reachable here.
+  const layoutManager = useLayoutManager();
+  const { setSelectedLayoutId } = useCurrentLayoutActions();
 
   useEffect(() => {
     if (desktopBridge == undefined) {
@@ -148,7 +242,10 @@ export default function McpCommandBridge(): React.JSX.Element | null {
       void (async () => {
         let reply: { ok: boolean; value?: unknown; error?: string };
         try {
-          reply = { ok: true, value: await executeMcpCommand(msg, getMessagePipeline()) };
+          reply = {
+            ok: true,
+            value: await executeMcpCommand(msg, getMessagePipeline(), { layoutManager, setSelectedLayoutId }),
+          };
         } catch (err) {
           reply = { ok: false, error: err instanceof Error ? err.message : String(err) };
         }
@@ -161,7 +258,7 @@ export default function McpCommandBridge(): React.JSX.Element | null {
       disposed = true;
       unregister();
     };
-  }, [desktopBridge, getMessagePipeline]);
+  }, [desktopBridge, getMessagePipeline, layoutManager, setSelectedLayoutId]);
 
   if (desktopBridge == undefined) {
     return null;
