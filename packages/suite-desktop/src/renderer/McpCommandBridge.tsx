@@ -11,23 +11,23 @@ import { Time, clampTime, compare, fromSec, toSec } from "@lichtblick/rostime";
 import {
   MessagePipelineContext,
   useMessagePipelineGetter,
-} from "@lichtblick/suite-base/components/MessagePipeline";
+} from "@lichtblick/suite-base/src/components/MessagePipeline";
 import {
   LayoutID,
   useCurrentLayoutActions,
-} from "@lichtblick/suite-base/context/CurrentLayoutContext";
-import { useLayoutManager } from "@lichtblick/suite-base/context/LayoutManagerContext";
-import { useUserScriptState } from "@lichtblick/suite-base/context/UserScriptStateContext";
-import type { ILayoutManager } from "@lichtblick/suite-base/services/ILayoutManager";
-import { MAX_SUPPORTED_LAYOUT_VERSION } from "@lichtblick/suite-base/providers/CurrentLayoutProvider/constants";
-import { DIAGNOSTIC_SEVERITY } from "@lichtblick/suite-base/players/UserScriptPlayer/constants";
+} from "@lichtblick/suite-base/src/context/CurrentLayoutContext";
+import { useLayoutManager } from "@lichtblick/suite-base/src/context/LayoutManagerContext";
+import { useUserScriptState } from "@lichtblick/suite-base/src/context/UserScriptStateContext";
+import type { ILayoutManager } from "@lichtblick/suite-base/src/services/ILayoutManager";
+import { MAX_SUPPORTED_LAYOUT_VERSION } from "@lichtblick/suite-base/src/providers/CurrentLayoutProvider/constants";
+import { DIAGNOSTIC_SEVERITY } from "@lichtblick/suite-base/src/players/UserScriptPlayer/constants";
 import type {
   Diagnostic,
   UserScriptLog,
-} from "@lichtblick/suite-base/players/UserScriptPlayer/types";
-import type { MessageEvent, Topic } from "@lichtblick/suite-base/players/types";
-import { validateLayoutData } from "@lichtblick/suite-base/util/layout";
-import type { UserScript, UserScripts } from "@lichtblick/suite-base/types/panels";
+} from "@lichtblick/suite-base/src/players/UserScriptPlayer/types";
+import type { MessageEvent, Topic } from "@lichtblick/suite-base/src/players/types";
+import { validateLayoutData } from "@lichtblick/suite-base/src/util/layout";
+import type { UserScript, UserScripts } from "@lichtblick/suite-base/src/types/panels";
 
 import { Desktop } from "../common/types";
 

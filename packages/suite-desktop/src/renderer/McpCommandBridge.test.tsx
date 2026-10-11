@@ -4,17 +4,17 @@
 
 import { render, waitFor } from "@testing-library/react";
 
-import type { MessagePipelineContext } from "@lichtblick/suite-base/components/MessagePipeline";
-import MockMessagePipelineProvider from "@lichtblick/suite-base/components/MessagePipeline/MockMessagePipelineProvider";
+import type { MessagePipelineContext } from "@lichtblick/suite-base/src/components/MessagePipeline";
+import MockMessagePipelineProvider from "@lichtblick/suite-base/src/components/MessagePipeline/MockMessagePipelineProvider";
 import CurrentLayoutContext, {
   ICurrentLayout,
-} from "@lichtblick/suite-base/context/CurrentLayoutContext";
-import LayoutManagerContext from "@lichtblick/suite-base/context/LayoutManagerContext";
-import { UserScriptStateProvider } from "@lichtblick/suite-base/context/UserScriptStateContext";
-import type { ILayoutManager } from "@lichtblick/suite-base/services/ILayoutManager";
-import type { Layout } from "@lichtblick/suite-base/services/ILayoutStorage";
-import { PlayerPresence, type Topic } from "@lichtblick/suite-base/players/types";
-import type { UserScripts } from "@lichtblick/suite-base/types/panels";
+} from "@lichtblick/suite-base/src/context/CurrentLayoutContext";
+import LayoutManagerContext from "@lichtblick/suite-base/src/context/LayoutManagerContext";
+import { UserScriptStateProvider } from "@lichtblick/suite-base/src/context/UserScriptStateContext";
+import type { ILayoutManager } from "@lichtblick/suite-base/src/services/ILayoutManager";
+import type { Layout } from "@lichtblick/suite-base/src/services/ILayoutStorage";
+import { PlayerPresence, type Topic } from "@lichtblick/suite-base/src/players/types";
+import type { UserScripts } from "@lichtblick/suite-base/src/types/panels";
 
 import McpCommandBridge, {
   executeLayoutCommand,

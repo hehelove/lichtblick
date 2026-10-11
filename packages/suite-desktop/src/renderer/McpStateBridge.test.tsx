@@ -4,8 +4,8 @@
 
 import { render } from "@testing-library/react";
 
-import MockMessagePipelineProvider from "@lichtblick/suite-base/components/MessagePipeline/MockMessagePipelineProvider";
-import { PlayerPresence } from "@lichtblick/suite-base/players/types";
+import MockMessagePipelineProvider from "@lichtblick/suite-base/src/components/MessagePipeline/MockMessagePipelineProvider";
+import { PlayerPresence } from "@lichtblick/suite-base/src/players/types";
 
 import McpStateBridge from "./McpStateBridge";
 import { Desktop } from "../common/types";

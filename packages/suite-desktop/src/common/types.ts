@@ -5,7 +5,18 @@
 // License, v2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/
 
-import type { PlayerPresence } from "@lichtblick/suite-base/src/players/types";
+/**
+ * Mirror of the PlayerPresence enum (suite-base/src/players/types.ts) as a literal union so the
+ * main/preload tsc projects don't pull the suite-base source graph. Assigning the real enum in
+ * the renderer (McpStateBridge) fails to compile if the values ever drift.
+ */
+export type PlayerPresence =
+  | "NOT_PRESENT"
+  | "INITIALIZING"
+  | "RECONNECTING"
+  | "BUFFERING"
+  | "PRESENT"
+  | "ERROR";
 
 /** Player/topic state pushed from the renderer to the main process for MCP tools */
 export type McpStateSnapshot = {

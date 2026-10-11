@@ -7,7 +7,6 @@
 
 import net, { AddressInfo } from "net";
 
-import { PlayerPresence } from "@lichtblick/suite-base/src/players/types";
 
 import { McpServer, type McpServerSettings } from "./McpServer";
 import { registerDataTools } from "./tools/dataTools";
@@ -183,7 +182,7 @@ describe("McpServer", () => {
     const server = makeServer();
     registerDataTools(server, {
       getState: () => ({
-        presence: PlayerPresence.PRESENT,
+        presence: "PRESENT",
         playerName: "rosbridge",
         topics: [{ name: "/tf", schemaName: "std_msgs/String" }],
         datatypes: {

@@ -5,7 +5,6 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-import { PlayerPresence } from "@lichtblick/suite-base/src/players/types";
 
 import type { McpStateSnapshot } from "../../../common/types";
 
@@ -53,14 +52,14 @@ function parseJson(result: ToolResult): unknown {
 }
 
 const EMPTY_SNAPSHOT: McpStateSnapshot = {
-  presence: PlayerPresence.NOT_PRESENT,
+  presence: "NOT_PRESENT",
   playerName: undefined,
   topics: [],
   datatypes: {},
 };
 
 const POPULATED_SNAPSHOT: McpStateSnapshot = {
-  presence: PlayerPresence.PRESENT,
+  presence: "PRESENT",
   playerName: "rosbridge",
   topics: [
     { name: "/tf", schemaName: "geometry_msgs/msg/TransformStamped" },

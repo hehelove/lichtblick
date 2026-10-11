@@ -4,7 +4,6 @@
 import { BrowserWindow, app, ipcMain, webContents } from "electron";
 
 import Logger from "@lichtblick/log";
-import { PlayerPresence } from "@lichtblick/suite-base/src/players/types";
 
 import StudioWindow from "../StudioWindow";
 import { McpStateSnapshot } from "../../common/types";
@@ -14,7 +13,7 @@ const log = Logger.getLogger(__filename);
 const DEFAULT_COMMAND_TIMEOUT_MS = 60_000;
 
 const EMPTY_SNAPSHOT: McpStateSnapshot = {
-  presence: PlayerPresence.NOT_PRESENT,
+  presence: "NOT_PRESENT",
   playerName: undefined,
   topics: [],
   datatypes: {},

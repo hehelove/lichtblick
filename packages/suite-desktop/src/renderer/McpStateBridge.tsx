@@ -6,7 +6,7 @@ import React, { useEffect } from "react";
 import {
   MessagePipelineContext,
   useMessagePipeline,
-} from "@lichtblick/suite-base/components/MessagePipeline";
+} from "@lichtblick/suite-base/src/components/MessagePipeline";
 
 import { Desktop } from "../common/types";
 
