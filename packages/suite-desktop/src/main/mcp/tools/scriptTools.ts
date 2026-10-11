@@ -102,8 +102,8 @@ export function registerScriptTools(
         sourceCode: z.string().min(1).describe("Script source code (TypeScript/JavaScript)"),
         id: z.string().optional().describe("Id of an existing script to overwrite; omit to create"),
       },
-      // Overwriting an existing script replaces its source — destructive, but converging.
-      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+      // Overwrite converges, but the no-id create path allocates a fresh script per call.
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
     },
     async ({ name, sourceCode, id }) => await run("script.put", { name, sourceCode, id }),
   );

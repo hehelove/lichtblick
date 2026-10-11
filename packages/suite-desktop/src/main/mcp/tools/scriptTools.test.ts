@@ -71,7 +71,7 @@ describe("mcp script tools", () => {
     const put = tools.get("user_script_put")!;
     expect(put.annotations?.readOnlyHint).toEqual(false);
     expect(put.annotations?.destructiveHint).toEqual(true);
-    expect(put.annotations?.idempotentHint).toEqual(true); // same payload converges
+    expect(put.annotations?.idempotentHint).toEqual(false); // no-id create allocates per call
 
     const del = tools.get("user_script_delete")!;
     expect(del.annotations?.readOnlyHint).toEqual(false);
