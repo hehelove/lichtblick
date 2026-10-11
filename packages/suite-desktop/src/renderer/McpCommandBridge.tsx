@@ -20,6 +20,7 @@ import { useLayoutManager } from "@lichtblick/suite-base/context/LayoutManagerCo
 import type { ILayoutManager } from "@lichtblick/suite-base/services/ILayoutManager";
 import { MAX_SUPPORTED_LAYOUT_VERSION } from "@lichtblick/suite-base/providers/CurrentLayoutProvider/constants";
 import { validateLayoutData } from "@lichtblick/suite-base/util/layout";
+import type { UserScripts } from "@lichtblick/suite-base/types/panels";
 
 import { Desktop } from "../common/types";
 
@@ -205,17 +206,103 @@ export async function executeLayoutCommand(
   }
 }
 
+/**
+ * Collaborators needed to execute `"script.*"` commands against the current layout's user scripts.
+ * Reads go through a getter (layout state changes often; the handler wants the freshest snapshot
+ * without re-registering on every change), writes through setUserScripts, whose reducer merges by
+ * key and deletes on undefined values.
+ */
+export type ScriptCommandDeps = {
+  getUserScripts: () => UserScripts;
+  setUserScripts: (payload: Partial<UserScripts>) => void;
+};
+
+/** Allocates `mcp-script-<n>` with n = 1 + the max numeric suffix (cannot collide with panel ids). */
+function nextMcpScriptId(userScripts: UserScripts): string {
+  let max = 0;
+  for (const key of Object.keys(userScripts)) {
+    const match = /^mcp-script-(\d+)$/.exec(key);
+    if (match != undefined) {
+      max = Math.max(max, Number(match[1]));
+    }
+  }
+  return `mcp-script-${max + 1}`;
+}
+
+/**
+ * Executes `"script.*"` commands against the current layout's user scripts via setUserScripts.
+ * Miss detection happens before dispatching so a delete of a nonexistent id never silently
+ * succeeds. Throws on invalid input; the caller turns a thrown error into an `{ok: false}` reply.
+ */
+export function executeScriptCommand(
+  msg: { type: string; payload: unknown },
+  deps: ScriptCommandDeps,
+): unknown {
+  const userScripts = deps.getUserScripts();
+
+  switch (msg.type) {
+    case "script.list":
+      return {
+        scripts: Object.entries(userScripts).map(([id, script]) => ({ id, name: script.name })),
+      };
+
+    case "script.get": {
+      const { id } = msg.payload as { id?: string };
+      const script = id != undefined ? userScripts[id] : undefined;
+      if (script == undefined) {
+        throw new Error(`user script not found: ${id}`);
+      }
+      return { name: script.name, sourceCode: script.sourceCode };
+    }
+
+    case "script.put": {
+      const { name, sourceCode, id } = msg.payload as {
+        name?: unknown;
+        sourceCode?: unknown;
+        id?: string;
+      };
+      if (typeof name !== "string" || name.length === 0) {
+        throw new Error("name must be a non-empty string");
+      }
+      if (typeof sourceCode !== "string" || sourceCode.length === 0) {
+        throw new Error("sourceCode must be a non-empty string");
+      }
+      const scriptId = id ?? nextMcpScriptId(userScripts);
+      const created = userScripts[scriptId] == undefined;
+      deps.setUserScripts({ [scriptId]: { name, sourceCode } });
+      return { id: scriptId, name, created };
+    }
+
+    case "script.delete": {
+      const { id } = msg.payload as { id?: string };
+      // The reducer would silently ignore (or drop) a miss, so detect it before dispatching.
+      if (id == undefined || userScripts[id] == undefined) {
+        throw new Error(`user script not found: ${id}`);
+      }
+      deps.setUserScripts({ [id]: undefined });
+      return { id, deleted: true };
+    }
+
+    default:
+      throw new Error(`unknown script command: ${msg.type}`);
+  }
+}
+
 /** Routes a main-process MCP command to its executor. Task 6+ appends further branches here. */
 export function executeMcpCommand(
   msg: { type: string; payload: unknown },
   ctx: MessagePipelineContext,
   layoutDeps: LayoutCommandDeps,
+  scriptDeps: ScriptCommandDeps,
 ): unknown {
   if (msg.type.startsWith("playback.")) {
     return executePlaybackCommand(msg, ctx);
   }
   if (msg.type.startsWith("layout.")) {
     return executeLayoutCommand(msg, layoutDeps);
+  }
+  if (msg.type.startsWith("script.")) {
+    return executeScriptCommand(msg, scriptDeps);
   }
   throw new Error(`unknown mcp command: ${msg.type}`);
 }
@@ -231,7 +318,7 @@ export default function McpCommandBridge(): React.JSX.Element | null {
   // Rendered inside MultiProvider next to LayoutManagerProvider/CurrentLayoutProvider (App's
   // pipelineAdapters slot), so both contexts are reachable here.
   const layoutManager = useLayoutManager();
-  const { setSelectedLayoutId } = useCurrentLayoutActions();
+  const { setSelectedLayoutId, setUserScripts, getCurrentLayoutState } = useCurrentLayoutActions();
 
   useEffect(() => {
     if (desktopBridge == undefined) {
@@ -244,7 +331,17 @@ export default function McpCommandBridge(): React.JSX.Element | null {
         try {
           reply = {
             ok: true,
-            value: await executeMcpCommand(msg, getMessagePipeline(), { layoutManager, setSelectedLayoutId }),
+            value: await executeMcpCommand(
+              msg,
+              getMessagePipeline(),
+              { layoutManager, setSelectedLayoutId },
+              {
+                // Read scripts on demand from the current layout state (getCurrentLayoutState is the
+                // documented snapshot getter for async callbacks; avoids re-rendering per change).
+                getUserScripts: () => getCurrentLayoutState().selectedLayout?.data?.userNodes ?? {},
+                setUserScripts,
+              },
+            ),
           };
         } catch (err) {
           reply = { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -258,7 +355,14 @@ export default function McpCommandBridge(): React.JSX.Element | null {
       disposed = true;
       unregister();
     };
-  }, [desktopBridge, getMessagePipeline, layoutManager, setSelectedLayoutId]);
+  }, [
+    desktopBridge,
+    getMessagePipeline,
+    layoutManager,
+    setSelectedLayoutId,
+    setUserScripts,
+    getCurrentLayoutState,
+  ]);
 
   if (desktopBridge == undefined) {
     return null;

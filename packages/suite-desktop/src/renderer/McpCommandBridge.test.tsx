@@ -13,8 +13,13 @@ import LayoutManagerContext from "@lichtblick/suite-base/context/LayoutManagerCo
 import type { ILayoutManager } from "@lichtblick/suite-base/services/ILayoutManager";
 import type { Layout } from "@lichtblick/suite-base/services/ILayoutStorage";
 import { PlayerPresence } from "@lichtblick/suite-base/players/types";
+import type { UserScripts } from "@lichtblick/suite-base/types/panels";
 
-import McpCommandBridge, { executeLayoutCommand, executePlaybackCommand } from "./McpCommandBridge";
+import McpCommandBridge, {
+  executeLayoutCommand,
+  executePlaybackCommand,
+  executeScriptCommand,
+} from "./McpCommandBridge";
 import { Desktop } from "../common/types";
 
 type McpCommandMsg = { id: number; type: string; payload: unknown };
@@ -53,8 +58,17 @@ describe("McpCommandBridge", () => {
   const getLayouts = jest.fn();
   const saveNewLayout = jest.fn();
   const setSelectedLayoutId = jest.fn();
+  const setUserScripts = jest.fn();
+  // Mutable userNodes map standing in for the current layout's script state.
+  const userNodes: UserScripts = {};
+  const getCurrentLayoutState = () =>
+    ({
+      selectedLayout: { id: "layout-1", data: { ...makeLayoutData(), userNodes } },
+    }) as unknown as ReturnType<ICurrentLayout["actions"]["getCurrentLayoutState"]>;
   const layoutManagerMock = { getLayouts, saveNewLayout } as unknown as ILayoutManager;
-  const currentLayoutMock = { actions: { setSelectedLayoutId } } as unknown as ICurrentLayout;
+  const currentLayoutMock = {
+    actions: { setSelectedLayoutId, setUserScripts, getCurrentLayoutState },
+  } as unknown as ICurrentLayout;
 
   beforeEach(() => {
     handler = undefined;
@@ -66,6 +80,10 @@ describe("McpCommandBridge", () => {
     getLayouts.mockReset();
     saveNewLayout.mockReset();
     setSelectedLayoutId.mockReset();
+    setUserScripts.mockReset();
+    for (const key of Object.keys(userNodes)) {
+      delete userNodes[key];
+    }
     globalWithBridge.desktopBridge = mockBridge;
   });
 
@@ -267,6 +285,34 @@ describe("McpCommandBridge", () => {
     expect(reply.error).toContain('"globalVariables"');
     expect(reply.error).toContain('"playbackConfig"');
     expect(saveNewLayout).not.toHaveBeenCalled();
+  });
+
+  it("routes script.list through the mounted bridge to the current layout's userNodes", async () => {
+    userNodes["mcp-script-1"] = { name: "Foo", sourceCode: "// x" };
+    userNodes["other"] = { name: "Bar", sourceCode: "// y" };
+    renderBridge();
+    send("script.list", {});
+    await waitFor(() => { expect(sendMcpResult).toHaveBeenCalled(); });
+    const reply = lastReply();
+    expect(reply.ok).toEqual(true);
+    expect(reply.value).toEqual({
+      scripts: [
+        { id: "mcp-script-1", name: "Foo" },
+        { id: "other", name: "Bar" },
+      ],
+    });
+  });
+
+  it("routes script.put through the mounted bridge and applies it via setUserScripts", async () => {
+    renderBridge();
+    send("script.put", { name: "Foo", sourceCode: "// x" });
+    await waitFor(() => { expect(setUserScripts).toHaveBeenCalled(); });
+    expect(setUserScripts).toHaveBeenCalledWith({
+      "mcp-script-1": { name: "Foo", sourceCode: "// x" },
+    });
+    const reply = lastReply();
+    expect(reply.ok).toEqual(true);
+    expect(reply.value).toEqual({ id: "mcp-script-1", name: "Foo", created: true });
   });
 });
 
@@ -521,5 +567,150 @@ describe("executeLayoutCommand", () => {
         deps,
       ),
     ).rejects.toThrow("provide exactly one of name or layout_json");
+  });
+});
+
+describe("executeScriptCommand", () => {
+  // Hand-built deps mirroring the reducer's SET_USER_NODES semantics: merge by key, undefined deletes.
+  function makeScriptDeps(initial: UserScripts = {}) {
+    const userNodes: UserScripts = { ...initial };
+    const setUserScripts = jest.fn((payload: Partial<UserScripts>) => {
+      for (const [key, value] of Object.entries(payload)) {
+        if (value == undefined) {
+          delete userNodes[key];
+        } else {
+          userNodes[key] = value;
+        }
+      }
+    });
+    return { getUserScripts: () => userNodes, setUserScripts };
+  }
+
+  it("list maps userNodes to {scripts: [{id, name}]}", () => {
+    const deps = makeScriptDeps({
+      "mcp-script-1": { name: "Foo", sourceCode: "// x" },
+      other: { name: "Bar", sourceCode: "// y" },
+    });
+    const value = executeScriptCommand({ type: "script.list", payload: {} }, deps);
+    expect(value).toEqual({
+      scripts: [
+        { id: "mcp-script-1", name: "Foo" },
+        { id: "other", name: "Bar" },
+      ],
+    });
+    expect(deps.setUserScripts).not.toHaveBeenCalled();
+  });
+
+  it("put without an id creates mcp-script-1 on an empty layout", () => {
+    const deps = makeScriptDeps();
+    const value = executeScriptCommand(
+      { type: "script.put", payload: { name: "Foo", sourceCode: "// x" } },
+      deps,
+    );
+    expect(value).toEqual({ id: "mcp-script-1", name: "Foo", created: true });
+    expect(deps.setUserScripts).toHaveBeenCalledWith({
+      "mcp-script-1": { name: "Foo", sourceCode: "// x" },
+    });
+  });
+
+  it("put allocates 1 + the max existing mcp-script-N suffix, skipping gaps", () => {
+    const deps = makeScriptDeps({
+      "mcp-script-1": { name: "A", sourceCode: "// a" },
+      "mcp-script-5": { name: "B", sourceCode: "// b" },
+      "mcp-script-x": { name: "C", sourceCode: "// c" }, // non-numeric suffix: ignored
+      unrelated: { name: "D", sourceCode: "// d" }, // other keys: never reallocated
+    });
+    const value = executeScriptCommand(
+      { type: "script.put", payload: { name: "E", sourceCode: "// e" } },
+      deps,
+    );
+    expect(value).toEqual({ id: "mcp-script-6", name: "E", created: true });
+    expect(Object.keys(deps.getUserScripts())).toEqual(
+      expect.arrayContaining(["mcp-script-1", "mcp-script-5", "mcp-script-x", "unrelated", "mcp-script-6"]),
+    );
+  });
+
+  it("put with an existing id overwrites only that script and reports created: false", () => {
+    const deps = makeScriptDeps({
+      "mcp-script-1": { name: "Old", sourceCode: "// old" },
+      other: { name: "Keep", sourceCode: "// keep" },
+    });
+    const value = executeScriptCommand(
+      { type: "script.put", payload: { id: "mcp-script-1", name: "New", sourceCode: "// new" } },
+      deps,
+    );
+    expect(value).toEqual({ id: "mcp-script-1", name: "New", created: false });
+    expect(deps.getUserScripts()).toEqual({
+      "mcp-script-1": { name: "New", sourceCode: "// new" },
+      other: { name: "Keep", sourceCode: "// keep" },
+    });
+  });
+
+  it("put with an unknown explicit id upserts under that id", () => {
+    const deps = makeScriptDeps({ other: { name: "Keep", sourceCode: "// keep" } });
+    const value = executeScriptCommand(
+      { type: "script.put", payload: { id: "custom-id", name: "Foo", sourceCode: "// x" } },
+      deps,
+    );
+    expect(value).toEqual({ id: "custom-id", name: "Foo", created: true });
+    expect(deps.getUserScripts()["custom-id"]).toEqual({ name: "Foo", sourceCode: "// x" });
+    expect(deps.getUserScripts()["other"]).toEqual({ name: "Keep", sourceCode: "// keep" });
+  });
+
+  it("put rejects empty or non-string name and sourceCode without dispatching", () => {
+    const deps = makeScriptDeps();
+    for (const payload of [
+      { name: "", sourceCode: "// x" },
+      { name: "Foo", sourceCode: "" },
+      { sourceCode: "// x" },
+      { name: "Foo" },
+      { name: 42, sourceCode: "// x" },
+    ]) {
+      expect(() => executeScriptCommand({ type: "script.put", payload }, deps)).toThrow();
+    }
+    expect(deps.setUserScripts).not.toHaveBeenCalled();
+  });
+
+  it("get returns name and sourceCode on a hit", () => {
+    const deps = makeScriptDeps({ "mcp-script-1": { name: "Foo", sourceCode: "1+1" } });
+    const value = executeScriptCommand({ type: "script.get", payload: { id: "mcp-script-1" } }, deps);
+    expect(value).toEqual({ name: "Foo", sourceCode: "1+1" });
+  });
+
+  it("get throws for an unknown id", () => {
+    const deps = makeScriptDeps();
+    expect(() => executeScriptCommand({ type: "script.get", payload: { id: "nope" } }, deps)).toThrow(
+      "user script not found: nope",
+    );
+  });
+
+  it("delete removes the script so list no longer contains it", () => {
+    const deps = makeScriptDeps({
+      "mcp-script-1": { name: "Foo", sourceCode: "// x" },
+      other: { name: "Bar", sourceCode: "// y" },
+    });
+    const value = executeScriptCommand(
+      { type: "script.delete", payload: { id: "mcp-script-1" } },
+      deps,
+    );
+    expect(value).toEqual({ id: "mcp-script-1", deleted: true });
+    expect(deps.setUserScripts).toHaveBeenCalledWith({ "mcp-script-1": undefined });
+    expect(executeScriptCommand({ type: "script.list", payload: {} }, deps)).toEqual({
+      scripts: [{ id: "other", name: "Bar" }],
+    });
+  });
+
+  it("delete of a missing id errors without dispatching (no silent success)", () => {
+    const deps = makeScriptDeps();
+    expect(() => executeScriptCommand({ type: "script.delete", payload: { id: "nope" } }, deps)).toThrow(
+      "user script not found: nope",
+    );
+    expect(deps.setUserScripts).not.toHaveBeenCalled();
+  });
+
+  it("throws for unknown script commands", () => {
+    expect(() =>
+      executeScriptCommand({ type: "script.run", payload: {} }, makeScriptDeps()),
+    ).toThrow("unknown");
   });
 });
