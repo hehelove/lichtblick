@@ -19,9 +19,10 @@ import getDevModeIcon from "./getDevModeIcon";
 import { getFilesToOpen } from "./getFilesToOpen";
 import injectFilesToOpen from "./injectFilesToOpen";
 import installChromeExtensions from "./installChromeExtensions";
-import { getMcpState } from "./mcp/dispatch";
 import { McpServer } from "./mcp/McpServer";
+import { getMcpState, sendCommandToFocusedWindow } from "./mcp/dispatch";
 import { registerDataTools } from "./mcp/tools/dataTools";
+import { registerPlaybackTools } from "./mcp/tools/playbackTools";
 import { parseCLIFlags } from "./parseCLIFlags";
 import {
   registerRosPackageProtocolHandlers,
@@ -335,6 +336,7 @@ export async function main(): Promise<void> {
     Menu.setApplicationMenu(initialWindow.getMenu()); // When the app is launching for the first time we don't receive the browser-window-focus event.
 
     registerDataTools(McpServer.Instance(), { getState: getMcpState });
+    registerPlaybackTools(McpServer.Instance(), { sendCommand: sendCommandToFocusedWindow });
     void McpServer.Instance().start();
   });
 

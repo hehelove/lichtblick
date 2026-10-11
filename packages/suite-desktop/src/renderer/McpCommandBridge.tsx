@@ -1,0 +1,170 @@
+// SPDX-FileCopyrightText: Copyright (C) 2023-2026 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
+// SPDX-License-Identifier: MPL-2.0
+
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+import React, { useEffect } from "react";
+
+import { Time, clampTime, compare, fromSec, toSec } from "@lichtblick/rostime";
+import {
+  MessagePipelineContext,
+  useMessagePipelineGetter,
+} from "@lichtblick/suite-base/components/MessagePipeline";
+
+import { Desktop } from "../common/types";
+
+const NO_PLAYBACK_SUPPORT = "data source does not support playback control";
+const DEFAULT_STEP_SEC = 0.1;
+
+/** Serializes a Time both as the {sec, nsec} structure and as seconds. */
+function timePayload(time: Time | undefined): { sec: number; nsec: number; seconds: number } | undefined {
+  return time == undefined ? undefined : { sec: time.sec, nsec: time.nsec, seconds: toSec(time) };
+}
+
+/** Mirrors the PanelExtensionAdapter seekPlayback contract: numbers go through fromSec. */
+function toTime(time: number | { sec: number; nsec: number }): Time {
+  return typeof time === "object" ? { sec: time.sec, nsec: time.nsec } : fromSec(time);
+}
+
+/**
+ * Executes `"playback.*"` commands against the given message pipeline context. Throws on
+ * unsupported playback control; the caller turns a thrown error into an `{ok: false}` reply.
+ */
+export function executePlaybackCommand(
+  msg: { type: string; payload: unknown },
+  ctx: MessagePipelineContext,
+): unknown {
+  const activeData = ctx.playerState.activeData;
+
+  switch (msg.type) {
+    case "playback.get_state":
+      return {
+        currentTime: timePayload(activeData?.currentTime),
+        startTime: timePayload(activeData?.startTime),
+        endTime: timePayload(activeData?.endTime),
+        isPlaying: activeData?.isPlaying,
+        speed: activeData?.speed,
+        presence: ctx.playerState.presence,
+        playbackControlAvailable: ctx.seekPlayback != undefined,
+      };
+
+    case "playback.set_time": {
+      const seek = ctx.seekPlayback;
+      if (activeData == undefined || seek == undefined) {
+        throw new Error(NO_PLAYBACK_SUPPORT);
+      }
+      const target = clampTime(
+        toTime((msg.payload as { time: number | { sec: number; nsec: number } }).time),
+        activeData.startTime,
+        activeData.endTime,
+      );
+      seek(target);
+      return { time: timePayload(target) };
+    }
+
+    case "playback.play": {
+      const play = ctx.startPlayback;
+      if (play == undefined) {
+        throw new Error(NO_PLAYBACK_SUPPORT);
+      }
+      // If we are at the end, we need to go back to start (mirrors PlaybackControls).
+      const { currentTime, startTime, endTime } = activeData ?? {};
+      const seek = ctx.seekPlayback;
+      let seekedToStart = false;
+      if (
+        seek != undefined &&
+        currentTime != undefined &&
+        startTime != undefined &&
+        endTime != undefined &&
+        compare(currentTime, endTime) >= 0
+      ) {
+        seek(startTime);
+        seekedToStart = true;
+      }
+      play();
+      return { action: "play", seekedToStart };
+    }
+
+    case "playback.pause": {
+      const pause = ctx.pausePlayback;
+      if (pause == undefined) {
+        throw new Error(NO_PLAYBACK_SUPPORT);
+      }
+      pause();
+      return { action: "pause" };
+    }
+
+    case "playback.step": {
+      const seek = ctx.seekPlayback;
+      if (activeData == undefined || seek == undefined) {
+        throw new Error(NO_PLAYBACK_SUPPORT);
+      }
+      const { direction, seconds } = msg.payload as { direction: "forward" | "backward"; seconds?: number };
+      const delta = (seconds ?? DEFAULT_STEP_SEC) * (direction === "forward" ? 1 : -1);
+      const target = fromSec(toSec(activeData.currentTime) + delta);
+      // Playing forward up to the target plays all messages to the panels, which matters for
+      // message types that convey state (mirrors useDirectionalSeek). Backward always seeks.
+      if (direction === "forward" && ctx.playUntil != undefined) {
+        ctx.playUntil(target);
+        return { steppedTo: timePayload(target), via: "playUntil" };
+      }
+      seek(target);
+      return { steppedTo: timePayload(target), via: "seek" };
+    }
+
+    default:
+      throw new Error(`unknown playback command: ${msg.type}`);
+  }
+}
+
+/** Routes a main-process MCP command to its executor. Task 5+ appends further branches here. */
+export function executeMcpCommand(
+  msg: { type: string; payload: unknown },
+  ctx: MessagePipelineContext,
+): unknown {
+  if (msg.type.startsWith("playback.")) {
+    return executePlaybackCommand(msg, ctx);
+  }
+  throw new Error(`unknown mcp command: ${msg.type}`);
+}
+
+/**
+ * McpCommandBridge executes MCP commands sent from the main process against the message pipeline
+ * and replies with `{ok: true, value}` or `{ok: false, error}` via sendMcpResult. Headless sibling
+ * of McpStateBridge; rendered inside the message pipeline context via the pipelineAdapters slot.
+ */
+export default function McpCommandBridge(): React.JSX.Element | null {
+  const desktopBridge = (global as unknown as { desktopBridge?: Desktop }).desktopBridge;
+  const getMessagePipeline = useMessagePipelineGetter();
+
+  useEffect(() => {
+    if (desktopBridge == undefined) {
+      return;
+    }
+    let disposed = false;
+    const unregister = desktopBridge.onMcpCommand((msg) => {
+      void (async () => {
+        let reply: { ok: boolean; value?: unknown; error?: string };
+        try {
+          reply = { ok: true, value: await executeMcpCommand(msg, getMessagePipeline()) };
+        } catch (err) {
+          reply = { ok: false, error: err instanceof Error ? err.message : String(err) };
+        }
+        if (!disposed) {
+          desktopBridge.sendMcpResult(msg.id, reply);
+        }
+      })();
+    });
+    return () => {
+      disposed = true;
+      unregister();
+    };
+  }, [desktopBridge, getMessagePipeline]);
+
+  if (desktopBridge == undefined) {
+    return null;
+  }
+  return <></>;
+}
