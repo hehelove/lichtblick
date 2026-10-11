@@ -823,17 +823,22 @@ describe("executeScriptRunCommand", () => {
    * Deps with a mutable layout + player state. By default, writing the temp script makes the
    * output topic appear in player state (standing in for UserScriptPlayer re-registration);
    * override onWriteScript for timeout/ambiguity cases, iterator for the batch path.
+   * Script state mirrors the real UserScriptState store: it holds `initialScriptState` until the
+   * script is written, and `scriptStateOnWrite` replaces it (with a FRESH array, like the store)
+   * when the run's script lands.
    */
   function makeWired(
     opts: {
       onWriteScript?: () => void;
       iterator?: (topic: string) => AsyncIterableIterator<unknown> | undefined;
-      scriptState?: { diagnostics: unknown[]; logs: unknown[] };
+      initialScriptState?: { diagnostics: unknown[]; logs: unknown[] };
+      scriptStateOnWrite?: () => { diagnostics: unknown[]; logs: unknown[] } | undefined;
       pollIntervalMs?: number;
       pollTimeoutMs?: number;
     } = {},
   ): Wired {
     const userNodes: UserScripts = {};
+    let scriptState = opts.initialScriptState;
     const setUserScripts = jest.fn((payload: Partial<UserScripts>) => {
       for (const [key, value] of Object.entries(payload)) {
         if (value == undefined) {
@@ -843,6 +848,9 @@ describe("executeScriptRunCommand", () => {
         }
       }
       if (payload[RUN_ID] != undefined) {
+        if (opts.scriptStateOnWrite != undefined) {
+          scriptState = opts.scriptStateOnWrite();
+        }
         (opts.onWriteScript ?? (() => topics.push({ name: "/script_out", schemaName: "script" })))();
       }
     });
@@ -857,7 +865,7 @@ describe("executeScriptRunCommand", () => {
           getBatchIterator,
         }) as unknown as ReturnType<ScriptRunCommandDeps["getPipeline"]>,
       getScriptState: (scriptId) =>
-        (scriptId === RUN_ID ? opts.scriptState : undefined) as ReturnType<
+        (scriptId === RUN_ID ? scriptState : undefined) as ReturnType<
           ScriptRunCommandDeps["getScriptState"]
         >,
       pollIntervalMs: opts.pollIntervalMs,
@@ -948,10 +956,10 @@ describe("executeScriptRunCommand", () => {
   it("returns script logs and diagnostics from the user script state", async () => {
     const wired = makeWired({
       iterator: defaultIterator([msgEvent(0)]),
-      scriptState: {
+      scriptStateOnWrite: () => ({
         diagnostics: [{ severity: 4, message: "unused variable", source: "Typescript", code: 1 }],
         logs: [{ source: "processMessage", value: { hello: 1 } }],
-      },
+      }),
     });
     const value = (await run({ sourceCode: "// x" }, wired.deps)) as Record<string, unknown>;
     expect(value["logs"]).toEqual([{ source: "processMessage", value: { hello: 1 } }]);
@@ -960,19 +968,59 @@ describe("executeScriptRunCommand", () => {
     ]);
   });
 
-  it("fails fast with the script diagnostics when registration reports errors", async () => {
+  it("fails fast with fresh error diagnostics when registration reports errors", async () => {
     const wired = makeWired({
       // No topic ever appears; without diagnostics this would hit the (long) poll cap.
       onWriteScript: () => {},
-      scriptState: {
-        diagnostics: [{ severity: 8, message: "Cannot find name 'florble'", source: "Typescript", code: 2 }],
+      // Registration writes a fresh diagnostics array carrying this run's compile error.
+      scriptStateOnWrite: () => ({
+        diagnostics: [
+          { severity: 8, message: "Cannot find name 'florble'", source: "Typescript", code: 2 },
+        ],
         logs: [],
-      },
+      }),
       pollIntervalMs: 1,
       pollTimeoutMs: 60_000,
     });
     await expect(run({ sourceCode: "florble" }, wired.deps)).rejects.toThrow(/florble/);
     expect(wired.setUserScripts).toHaveBeenLastCalledWith({ [RUN_ID]: undefined });
+  });
+
+  it("is not poisoned by a failed previous run's leftover error diagnostics", async () => {
+    // The player never clears diagnostics on failure (only on successful registration), so the
+    // store still holds run 1's Error diagnostics when run 2 starts. Run 2's own script is fine
+    // and registers its output topic — it must succeed despite the stale array.
+    const wired = makeWired({
+      initialScriptState: {
+        diagnostics: [
+          { severity: 8, message: "previous run's error", source: "Typescript", code: 9 },
+        ],
+        logs: [],
+      },
+      // The topic lands only after the first poll tick, so tick 1 has no candidates and actually
+      // reads the stale diagnostics — where pre-fix code rejected with the previous run's error.
+      onWriteScript: () => {
+        setTimeout(() => wired.topics.push({ name: "/script_out", schemaName: "script" }), 5);
+      },
+      iterator: defaultIterator([msgEvent(0)]),
+      pollIntervalMs: 1,
+    });
+    const value = (await run({ sourceCode: "// fixed" }, wired.deps)) as Record<string, unknown>;
+    expect(value["count"]).toEqual(1);
+    expect(wired.userNodes[RUN_ID]).toEqual(undefined);
+  });
+
+  it("clears the busy flag when a pre-write read throws, without restoring", async () => {
+    const wired = makeWired({});
+    wired.deps.getUserScripts = () => {
+      throw new Error("layout read failed");
+    };
+    await expect(run({ sourceCode: "// x" }, wired.deps)).rejects.toThrow("layout read failed");
+    // Nothing was written, so the finally must not dispatch a restore write either.
+    expect(wired.setUserScripts).not.toHaveBeenCalled();
+    // The busy flag was cleared: a second run proceeds past the busy check (and hits the same
+    // read error again, not "a script run is already in progress").
+    await expect(run({ sourceCode: "// x" }, wired.deps)).rejects.toThrow("layout read failed");
   });
 
   it("cleans up when the batch iterator throws mid-collection", async () => {

@@ -27,7 +27,7 @@ import type {
 } from "@lichtblick/suite-base/players/UserScriptPlayer/types";
 import type { MessageEvent, Topic } from "@lichtblick/suite-base/players/types";
 import { validateLayoutData } from "@lichtblick/suite-base/util/layout";
-import type { UserScripts } from "@lichtblick/suite-base/types/panels";
+import type { UserScript, UserScripts } from "@lichtblick/suite-base/types/panels";
 
 import { Desktop } from "../common/types";
 
@@ -349,7 +349,8 @@ function serializeMessage(ev: MessageEvent): Record<string, unknown> {
  * Waits until exactly one topic that was not in the baseline player state appears — the script's
  * output topic (the UserScriptPlayer re-registers and emits new topics, index.ts:748-775). Fails
  * with a discriminating error on ambiguity, with the script's error diagnostics as soon as the
- * player reports them (compile errors never register a topic), or with a timeout error naming
+ * player reports them (compile errors never register a topic; only diagnostics written after run
+ * start count — the player never clears stale ones), or with a timeout error naming
  * what was awaited. ponytail: baseline is captured once at run start — a source still loading
  * (no activeData yet) yields an empty baseline and the run fails ambiguous/timeout; callers run
  * against an already-loaded source.
@@ -357,6 +358,7 @@ function serializeMessage(ev: MessageEvent): Record<string, unknown> {
 async function pollForOutputTopic(
   deps: ScriptRunCommandDeps,
   baseline: Set<string>,
+  initialDiagnostics: readonly Diagnostic[] | undefined,
 ): Promise<{ outputTopic: Topic; schemaName?: string }> {
   const intervalMs = deps.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
   const timeoutMs = deps.pollTimeoutMs ?? DEFAULT_POLL_TIMEOUT_MS;
@@ -372,11 +374,18 @@ async function pollForOutputTopic(
         `ambiguous script output topics: ${candidates.map((topic) => topic.name).join(", ")}`,
       );
     }
-    const errorDiagnostics = (deps.getScriptState(RUN_SCRIPT_ID)?.diagnostics ?? []).filter(
-      (diagnostic) => diagnostic.severity === DIAGNOSTIC_SEVERITY.Error,
-    );
-    if (errorDiagnostics.length > 0) {
-      throw new Error(`script failed: ${errorDiagnostics.map((d) => d.message).join("; ")}`);
+    // The player only clears diagnostics on successful registration (index.ts:749), so a failed
+    // earlier run's Error diagnostics would otherwise poison every later run: only fail fast on
+    // a diagnostics array that differs from the one at run start (the store always allocates a
+    // fresh array on write, so identity is a reliable freshness signal).
+    const diagnostics = deps.getScriptState(RUN_SCRIPT_ID)?.diagnostics;
+    if (diagnostics != undefined && diagnostics !== initialDiagnostics) {
+      const errorDiagnostics = diagnostics.filter(
+        (diagnostic) => diagnostic.severity === DIAGNOSTIC_SEVERITY.Error,
+      );
+      if (errorDiagnostics.length > 0) {
+        throw new Error(`script failed: ${errorDiagnostics.map((d) => d.message).join("; ")}`);
+      }
     }
     if (Date.now() >= deadline) {
       throw new Error(
@@ -418,17 +427,26 @@ export async function executeScriptRunCommand(
   }
   scriptRunInFlight = true;
   // Restore whatever occupied the reserved id before the run (undefined on a clean layout) so
-  // the finally always returns the layout to its prior state.
-  const previousScript = deps.getUserScripts()[RUN_SCRIPT_ID];
-  // Topics before the script exists — captured before the write so the script's own output topic
-  // can never be part of the baseline.
-  const baseline = new Set(
-    (deps.getPipeline().playerState.activeData?.topics ?? []).map((topic) => topic.name),
-  );
+  // the finally always returns the layout to its prior state. Declared out here so the finally
+  // can decide whether the temp write ever happened (baseline stays undefined until after the
+  // pre-write reads succeed), and captured inside the try so a throwing read still clears the
+  // busy flag without attempting a restore.
+  let previousScript: UserScript | undefined;
+  let baseline: Set<string> | undefined;
+  let initialDiagnostics: readonly Diagnostic[] | undefined;
   try {
+    previousScript = deps.getUserScripts()[RUN_SCRIPT_ID];
+    // Topics before the script exists — captured before the write so the script's own output
+    // topic can never be part of the baseline.
+    baseline = new Set(
+      (deps.getPipeline().playerState.activeData?.topics ?? []).map((topic) => topic.name),
+    );
+    // Array identity at run start — pollForOutputTopic only fails fast on a *changed* array.
+    initialDiagnostics = deps.getScriptState(RUN_SCRIPT_ID)?.diagnostics;
+
     deps.setUserScripts({ [RUN_SCRIPT_ID]: { name: name ?? RUN_SCRIPT_NAME, sourceCode } });
 
-    const { outputTopic, schemaName } = await pollForOutputTopic(deps, baseline);
+    const { outputTopic, schemaName } = await pollForOutputTopic(deps, baseline, initialDiagnostics);
     const iterator = deps.getPipeline().getBatchIterator(outputTopic.name);
     if (iterator == undefined) {
       throw new Error(LIVE_BATCH_ERROR);
@@ -456,8 +474,12 @@ export async function executeScriptRunCommand(
       diagnostics: state?.diagnostics ?? [],
     };
   } finally {
-    deps.setUserScripts({ [RUN_SCRIPT_ID]: previousScript });
+    // Clear the flag first: a throwing restore dispatch must not leak it (the residue self-heals
+    // — the next run snapshots and restores whatever occupies the id).
     scriptRunInFlight = false;
+    if (baseline != undefined) {
+      deps.setUserScripts({ [RUN_SCRIPT_ID]: previousScript });
+    }
   }
 }
 
