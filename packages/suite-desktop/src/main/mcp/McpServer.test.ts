@@ -184,6 +184,35 @@ describe("McpServer", () => {
     await server.stop();
   });
 
+  it("survives a busy port without throwing and allows a later restart", async () => {
+    const squatter = net.createServer(() => {});
+    await new Promise<void>((resolve) => {
+      squatter.listen(port, "127.0.0.1", () => {
+        resolve();
+      });
+    });
+
+    const server = makeServer();
+    await expect(server.start()).resolves.toBeUndefined(); // logs the failure, does not throw
+    // The listen failure is expected and logged via log.error(); acknowledge and clear it.
+    expect(console.error).toHaveBeenCalled();
+    (console.error as jest.Mock).mockReset();
+    expect(await isPortOpen(port)).toBe(true); // still the squatter
+
+    squatter.close();
+    await new Promise<void>((resolve) => {
+      squatter.once("close", () => {
+        resolve();
+      });
+    });
+
+    await server.start(); // #started was reset, so a retry binds
+    expect(await postRpc(port, TOKEN, { jsonrpc: "2.0", id: 1, method: "initialize" }).then(
+      (res) => res.status,
+    ).catch(() => "err")).not.toBe(401);
+    await server.stop();
+  });
+
   it("releases the port on stop()", async () => {
     const server = makeServer();
     await server.start();

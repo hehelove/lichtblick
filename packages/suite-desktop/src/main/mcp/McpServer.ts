@@ -37,12 +37,16 @@ export type McpServerOptions = {
 
 function defaultReadSettings(): McpServerSettings {
   const enabled = getAppSetting<boolean>(AppSetting.MCP_ENABLED) ?? false;
+  const port = getAppSetting<number>(AppSetting.MCP_PORT) ?? DEFAULT_MCP_PORT;
+  if (!enabled) {
+    // Disabled users must not touch settings.json on startup — no token write.
+    return { enabled: false, token: "", port };
+  }
   let token = getAppSetting<string>(AppSetting.MCP_TOKEN);
   if (token == undefined || token.length === 0) {
     token = randomBytes(32).toString("hex");
     setAppSetting(AppSetting.MCP_TOKEN, token);
   }
-  const port = getAppSetting<number>(AppSetting.MCP_PORT) ?? DEFAULT_MCP_PORT;
   return { enabled, token, port };
 }
 
