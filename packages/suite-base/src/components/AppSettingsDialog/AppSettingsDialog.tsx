@@ -49,6 +49,7 @@ import {
   ColorSchemeSettings,
   LanguageSettings,
   LaunchDefault,
+  McpServerSettings,
   MessageFramerate,
   StepSize,
   RosPackagePath,
@@ -131,6 +132,7 @@ export function AppSettingsDialog(
               {supportsAppUpdates && <AutoUpdate />}
               {!isDesktopApp() && <LaunchDefault />}
               {isDesktopApp() && <RosPackagePath />}
+              <McpServerSettings />
               <Stack>
                 <FormLabel>{t("advanced")}:</FormLabel>
                 <FormControlLabel

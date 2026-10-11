@@ -144,6 +144,15 @@ interface Desktop {
   /** Notify the app that the language setting has been changed */
   updateLanguage(): void;
 
+  /**
+   * Restart the local MCP server to pick up changed settings, optionally regenerating and
+   * persisting the auth token first. Returns the post-update server state so the renderer can
+   * refresh its display (settings.json changes from the main process don't propagate to it).
+   */
+  updateMcpServer(options?: {
+    regenerateToken?: boolean;
+  }): Promise<{ enabled: boolean; port: number; token: string }>;
+
   /** Push the current player state snapshot to the main process for MCP tools */
   sendMcpStateSnapshot(snapshot: McpStateSnapshot): void;
 

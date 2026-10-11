@@ -73,6 +73,18 @@ export default function Root(props: RootProps): React.JSX.Element {
     };
   }, [appConfiguration]);
 
+  // Restart the local MCP server whenever the enabled setting changes so it starts listening
+  // (or shuts down) without requiring an app restart.
+  useEffect(() => {
+    const handler = () => {
+      void desktopBridge.updateMcpServer();
+    };
+    appConfiguration.addChangeListener(AppSetting.MCP_ENABLED, handler);
+    return () => {
+      appConfiguration.removeChangeListener(AppSetting.MCP_ENABLED, handler);
+    };
+  }, [appConfiguration]);
+
   const [extensionLoaders] = useState(() => [
     new IdbExtensionLoader("org"),
     new DesktopExtensionLoader(desktopBridge),

@@ -133,6 +133,13 @@ export function main(): void {
     async updateLanguage() {
       await ipcRenderer.invoke("updateLanguage");
     },
+    async updateMcpServer(options?: { regenerateToken?: boolean }) {
+      return await (ipcRenderer.invoke("update-mcp-server", options) as Promise<{
+        enabled: boolean;
+        port: number;
+        token: string;
+      }>);
+    },
     async getCLIFlags(): Promise<CLIFlags> {
       return await (ipcRenderer.invoke("getCLIFlags") as Promise<CLIFlags>);
     },

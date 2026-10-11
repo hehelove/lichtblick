@@ -5,6 +5,7 @@
 // License, v2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/
 
+import { randomBytes } from "crypto";
 import { app, BrowserWindow, ipcMain, Menu, nativeTheme, session } from "electron";
 
 import Logger from "@lichtblick/log";
@@ -19,7 +20,7 @@ import getDevModeIcon from "./getDevModeIcon";
 import { getFilesToOpen } from "./getFilesToOpen";
 import injectFilesToOpen from "./injectFilesToOpen";
 import installChromeExtensions from "./installChromeExtensions";
-import { McpServer } from "./mcp/McpServer";
+import { DEFAULT_MCP_PORT, McpServer } from "./mcp/McpServer";
 import { getMcpState, sendCommandToFocusedWindow } from "./mcp/dispatch";
 import { registerDataTools } from "./mcp/tools/dataTools";
 import { registerLayoutTools } from "./mcp/tools/layoutTools";
@@ -30,7 +31,7 @@ import {
   registerRosPackageProtocolHandlers,
   registerRosPackageProtocolSchemes,
 } from "./rosPackageResources";
-import { getAppSetting } from "./settings";
+import { getAppSetting, setAppSetting } from "./settings";
 import {
   LICHTBLICK_PRODUCT_HOMEPAGE,
   LICHTBLICK_PRODUCT_NAME,
@@ -242,11 +243,24 @@ export async function main(): Promise<void> {
 
   // The renderer notifies us when MCP-related settings changed so the server can
   // restart with the new enabled/token/port values.
-  ipcMain.handle("update-mcp-server", async () => {
-    const mcp = McpServer.Instance();
-    await mcp.stop();
-    await mcp.start();
-  });
+  ipcMain.handle(
+    "update-mcp-server",
+    async (_event, options?: { regenerateToken?: boolean }) => {
+      if (options?.regenerateToken === true) {
+        // Persist before the restart so start() resolves the fresh token.
+        // Same format as the token generated inside McpServer's settings reader.
+        setAppSetting(AppSetting.MCP_TOKEN, randomBytes(32).toString("hex"));
+      }
+      const mcp = McpServer.Instance();
+      await mcp.stop();
+      await mcp.start();
+      return {
+        enabled: getAppSetting<boolean>(AppSetting.MCP_ENABLED) ?? false,
+        port: getAppSetting<number>(AppSetting.MCP_PORT) ?? DEFAULT_MCP_PORT,
+        token: getAppSetting<string>(AppSetting.MCP_TOKEN) ?? "",
+      };
+    },
+  );
 
   // This method will be called when Electron has finished
   // initialization and is ready to create browser windows.
