@@ -129,9 +129,13 @@ export class McpServer {
     }
   }
 
+  /** True while the HTTP server has a bound socket — the honest signal for UI status displays. */
+  public isListening(): boolean {
+    return this.#httpServer != undefined;
+  }
+
   public async stop(): Promise<void> {
     this.#started = false;
-
     const sessions = [...this.#sessions.values()];
     this.#sessions.clear();
     for (const { transport } of sessions) {

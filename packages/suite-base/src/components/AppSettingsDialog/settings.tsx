@@ -401,10 +401,16 @@ export function RosPackagePath(): React.ReactElement {
 const DEFAULT_MCP_PORT = 7333;
 
 /** Structural slice of the desktop preload bridge, mirroring `Desktop.updateMcpServer`. */
+type McpServerState = {
+  enabled: boolean;
+  port: number;
+  token: string;
+  /** Whether the HTTP socket is actually bound — `enabled` is only the setting. */
+  listening: boolean;
+};
+
 type McpBridge = {
-  updateMcpServer(options?: {
-    regenerateToken?: boolean;
-  }): Promise<{ enabled: boolean; port: number; token: string }>;
+  updateMcpServer(options?: { regenerateToken?: boolean }): Promise<McpServerState>;
 };
 
 export function McpServerSettings(): React.ReactElement | null {
@@ -416,22 +422,35 @@ export function McpServerSettings(): React.ReactElement | null {
 
   // Main-process writes (first-enable token generation, regeneration) never propagate back to
   // this process, so values returned from updateMcpServer are overlaid on the settings-derived
-  // display state.
-  const [refreshed, setRefreshed] = useState<Awaited<ReturnType<McpBridge["updateMcpServer"]>>>();
+  // display state. The checkbox itself always follows the setting — this renderer is the sole
+  // writer of MCP_ENABLED, so the hook value is at least as fresh as any overlay and cannot be
+  // masked by a stale async reply.
+  const [refreshed, setRefreshed] = useState<McpServerState>();
 
   if (desktopBridge == undefined) {
     return null;
   }
 
-  const isEnabled = refreshed?.enabled ?? enabled;
+  const isEnabled = enabled;
   const port = refreshed?.port ?? portFromSettings ?? DEFAULT_MCP_PORT;
   const token = refreshed?.token ?? tokenFromSettings ?? "";
   const mcpUrl = `http://127.0.0.1:${port}/mcp`;
   const claudeCodeSnippet = `claude mcp add --transport http lichtblick ${mcpUrl} --header "Authorization: Bearer ${token}"`;
   const claudeDesktopSnippet = `npx mcp-remote ${mcpUrl} --header "Authorization: Bearer ${token}"`;
+  // ponytail: listening truth is last-interaction truth (no push channel); a boot-time port
+  // conflict shows as listening until the first toggle/regenerate reports it.
+  const statusText = !isEnabled
+    ? t("mcpStatusOff")
+    : refreshed?.listening === false
+      ? t("mcpStatusFailed", { port })
+      : t("mcpStatusListening", { port });
 
   const handleRegenerate = async () => {
-    setRefreshed(await desktopBridge.updateMcpServer({ regenerateToken: true }));
+    try {
+      setRefreshed(await desktopBridge.updateMcpServer({ regenerateToken: true }));
+    } catch (error) {
+      reportError(error as Error);
+    }
   };
 
   // The toggle is the single restart trigger and consumes the returned state — without this the
@@ -460,9 +479,7 @@ export function McpServerSettings(): React.ReactElement | null {
         }
         label={t("mcpEnable")}
       />
-      <Typography variant="body2">
-        {isEnabled ? t("mcpStatusListening", { port }) : t("mcpStatusOff")}
-      </Typography>
+      <Typography variant="body2">{statusText}</Typography>
       <Stack direction="row" alignItems="center" gap={1}>
         <TextField
           fullWidth

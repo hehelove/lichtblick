@@ -225,8 +225,10 @@ describe("McpServer", () => {
     const server = makeServer();
     await server.start();
     await expect(server.start()).resolves.toBeUndefined();
+    expect(server.isListening()).toBe(true);
     expect(await isPortOpen(port)).toBe(true);
     await server.stop();
+    expect(server.isListening()).toBe(false);
   });
 
   it("survives a busy port without throwing and allows a later restart", async () => {
@@ -239,6 +241,7 @@ describe("McpServer", () => {
 
     const server = makeServer();
     await expect(server.start()).resolves.toBeUndefined(); // logs the failure, does not throw
+    expect(server.isListening()).toBe(false); // honest signal despite enabled settings
     // The listen failure is expected and logged via log.error(); acknowledge and clear it.
     expect(console.error).toHaveBeenCalled();
     (console.error as jest.Mock).mockReset();

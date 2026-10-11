@@ -138,6 +138,7 @@ export function main(): void {
         enabled: boolean;
         port: number;
         token: string;
+        listening: boolean;
       }>);
     },
     async getCLIFlags(): Promise<CLIFlags> {

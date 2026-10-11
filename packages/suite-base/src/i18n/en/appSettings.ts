@@ -28,6 +28,7 @@ export const appSettings = {
   mcpCopyToken: "Copy token",
   mcpEnable: "Enable the local MCP server",
   mcpRegenerateToken: "Regenerate token",
+  mcpStatusFailed: "Failed to listen on 127.0.0.1:{{port}} (port busy or start failed)",
   mcpStatusListening: "Listening on 127.0.0.1:{{port}}",
   mcpStatusOff: "Server is off",
   mcpTokenLabel: "Access token",

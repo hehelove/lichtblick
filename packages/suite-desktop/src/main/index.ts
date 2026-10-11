@@ -258,6 +258,9 @@ export async function main(): Promise<void> {
         enabled: getAppSetting<boolean>(AppSetting.MCP_ENABLED) ?? false,
         port: getAppSetting<number>(AppSetting.MCP_PORT) ?? DEFAULT_MCP_PORT,
         token: getAppSetting<string>(AppSetting.MCP_TOKEN) ?? "",
+        // The setting says "should run"; this says the socket is actually bound (start()
+        // deliberately swallows listen failures like a busy port).
+        listening: mcp.isListening(),
       };
     },
   );

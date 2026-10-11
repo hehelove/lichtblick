@@ -89,7 +89,12 @@ describe("McpServerSettings component", () => {
 
   it("writes MCP_ENABLED, restarts via updateMcpServer, and shows the returned token", async () => {
     configValues[AppSetting.MCP_ENABLED] = false;
-    updateMcpServer.mockResolvedValue({ enabled: true, port: 7333, token: "boot-token" });
+    updateMcpServer.mockResolvedValue({
+      enabled: true,
+      port: 7333,
+      token: "boot-token",
+      listening: true,
+    });
 
     render(<McpServerSettings />);
 
@@ -104,7 +109,12 @@ describe("McpServerSettings component", () => {
   it("regenerates the token via updateMcpServer and displays the returned token", async () => {
     configValues[AppSetting.MCP_ENABLED] = true;
     configValues[AppSetting.MCP_TOKEN] = "old-token";
-    updateMcpServer.mockResolvedValue({ enabled: true, port: 7333, token: "fresh-token" });
+    updateMcpServer.mockResolvedValue({
+      enabled: true,
+      port: 7333,
+      token: "fresh-token",
+      listening: true,
+    });
 
     render(<McpServerSettings />);
     expect(screen.getByDisplayValue("old-token")).toBeInTheDocument();
@@ -113,6 +123,26 @@ describe("McpServerSettings component", () => {
 
     expect(updateMcpServer).toHaveBeenCalledWith({ regenerateToken: true });
     expect(await screen.findByDisplayValue("fresh-token")).toBeInTheDocument();
+  });
+
+  it("reports a listen failure honestly instead of claiming to listen", async () => {
+    configValues[AppSetting.MCP_ENABLED] = true;
+    updateMcpServer.mockResolvedValue({
+      enabled: true,
+      port: 7333,
+      token: "t",
+      listening: false,
+    });
+
+    render(<McpServerSettings />);
+    expect(screen.getByText("Listening on 127.0.0.1:7333")).toBeInTheDocument(); // pre-interaction
+
+    fireEvent.click(screen.getByRole("button", { name: "Regenerate token" }));
+
+    expect(
+      await screen.findByText(/Failed to listen on 127.0.0.1:7333/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Listening on/)).toBeNull();
   });
 
   it("shows copy snippets containing the current port and token", () => {
