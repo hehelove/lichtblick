@@ -26,6 +26,7 @@ import {
   VelodyneDataSourceFactory,
 } from "@lichtblick/suite-base";
 
+import McpStateBridge from "./McpStateBridge";
 import { DesktopExtensionLoader } from "./services/DesktopExtensionLoader";
 import { DesktopLayoutLoader } from "./services/DesktopLayoutLoader";
 import { NativeAppMenu } from "./services/NativeAppMenu";
@@ -171,6 +172,7 @@ export default function Root(props: RootProps): React.JSX.Element {
       onUnmaximizeWindow={onUnmaximizeWindow}
       onCloseWindow={onCloseWindow}
       extraProviders={extraProviders}
+      pipelineAdapters={<McpStateBridge />}
     />
   );
 }

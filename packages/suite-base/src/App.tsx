@@ -57,6 +57,8 @@ export type AppProps = CustomWindowControlsProps & {
   enableGlobalCss?: boolean;
   appBarLeftInset?: number;
   extraProviders?: React.JSX.Element[];
+  /** Rendered inside the message pipeline context, next to the DocumentTitleAdapter */
+  pipelineAdapters?: React.ReactNode;
   onAppBarDoubleClick?: () => void;
 };
 
@@ -83,6 +85,7 @@ export function App(props: AppProps): React.JSX.Element {
     enableLaunchPreferenceScreen,
     enableGlobalCss = false,
     extraProviders,
+    pipelineAdapters,
   } = props;
 
   const providers = [
@@ -141,6 +144,7 @@ export function App(props: AppProps): React.JSX.Element {
             <ErrorBoundary>
               <MaybeLaunchPreference>
                 <MultiProvider providers={providers}>
+                  {pipelineAdapters}
                   <DocumentTitleAdapter />
                   <SendNotificationToastAdapter />
                   <DndProvider backend={HTML5Backend}>

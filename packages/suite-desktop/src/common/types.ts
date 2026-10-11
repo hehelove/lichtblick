@@ -5,6 +5,16 @@
 // License, v2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/
 
+import type { PlayerPresence } from "@lichtblick/suite-base/src/players/types";
+
+/** Player/topic state pushed from the renderer to the main process for MCP tools */
+export type McpStateSnapshot = {
+  presence: PlayerPresence;
+  playerName: string | undefined;
+  topics: { name: string; schemaName: string | undefined; aliasedFromName?: string }[];
+  datatypes: Record<string, unknown>;
+};
+
 // Events that are forwarded from the main process
 export type ForwardedMenuEvent =
   | "open"
@@ -133,6 +143,18 @@ interface Desktop {
 
   /** Notify the app that the language setting has been changed */
   updateLanguage(): void;
+
+  /** Push the current player state snapshot to the main process for MCP tools */
+  sendMcpStateSnapshot(snapshot: McpStateSnapshot): void;
+
+  /**
+   * Register a handler for commands sent from the main process via the MCP bridge.
+   * Returns a function to remove the registered event handler.
+   */
+  onMcpCommand(handler: (msg: { id: number; type: string; payload: unknown }) => void): UnregisterFn;
+
+  /** Reply to a command received via onMcpCommand */
+  sendMcpResult(id: number, result: unknown): void;
 }
 
 export type { Desktop, DesktopExtension, DesktopLayout, NativeMenuBridge, Storage, StorageContent };

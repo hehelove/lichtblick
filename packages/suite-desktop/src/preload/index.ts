@@ -22,6 +22,7 @@ import {
   Desktop,
   ForwardedMenuEvent,
   ForwardedWindowEvent,
+  McpStateSnapshot,
   NativeMenuBridge,
   Storage,
 } from "../common/types";
@@ -193,6 +194,25 @@ export function main(): void {
     },
     reloadWindow() {
       ipcRenderer.send("reloadMainWindow");
+    },
+    // MCP bridge
+    sendMcpStateSnapshot(snapshot: McpStateSnapshot) {
+      ipcRenderer.send("mcp-state-snapshot", snapshot);
+    },
+    onMcpCommand(handler: (msg: { id: number; type: string; payload: unknown }) => void) {
+      const listener = (
+        _ev: unknown,
+        msg: { id: number; type: string; payload: unknown },
+      ): void => {
+        handler(msg);
+      };
+      ipcRenderer.on("mcp-command", listener);
+      return () => {
+        ipcRenderer.off("mcp-command", listener);
+      };
+    },
+    sendMcpResult(id: number, result: unknown) {
+      void ipcRenderer.invoke("mcp-result", id, result);
     },
   };
 

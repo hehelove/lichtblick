@@ -1,6 +1,12 @@
 // SPDX-FileCopyrightText: Copyright (C) 2023-2026 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
 // SPDX-License-Identifier: MPL-2.0
 
+import React from "react";
+
+// React available everywhere (matches suite-base's test setup, whose components rely on the
+// classic JSX runtime when transformed by this package's babel-jest config)
+(global as { React?: unknown }).React = React;
+
 // intercept console.error and console.warn calls to fail tests if they are called
 // the user can indicate they expect the call to happen by checking the mock.calls
 // and then clearing the mock via mockClear()
