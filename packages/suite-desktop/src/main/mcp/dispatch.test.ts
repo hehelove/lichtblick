@@ -17,6 +17,14 @@ const mockIpcListeners = new Map<string, IpcListener[]>();
 const mockIpcHandlers = new Map<string, IpcListener>();
 const mockWebContentsById = new Map<number, { id: number; send: jest.Mock }>();
 const mockAllWindows: Array<{ webContents: { id: number } }> = [];
+const mockStudioWindowIds = new Set<number>();
+
+jest.mock("../StudioWindow", () => ({
+  __esModule: true,
+  default: {
+    fromWebContentsId: (id: number) => (mockStudioWindowIds.has(id) ? { id } : undefined),
+  },
+}));
 
 jest.mock("electron", () => ({
   app: {
@@ -64,7 +72,18 @@ function makeWindow(id: number): { id: number; send: jest.Mock } {
   const contents = { id, send: jest.fn() };
   mockWebContentsById.set(id, contents);
   mockAllWindows.push({ webContents: { id } });
+  mockStudioWindowIds.add(id);
   return contents;
+}
+
+/** Simulates a window closing: no longer a Studio window, no webContents, not in getAllWindows. */
+function closeWindow(id: number): void {
+  mockStudioWindowIds.delete(id);
+  mockWebContentsById.delete(id);
+  const index = mockAllWindows.findIndex((window) => window.webContents.id === id);
+  if (index >= 0) {
+    mockAllWindows.splice(index, 1);
+  }
 }
 
 const loadDispatch = async (): Promise<typeof import("./dispatch")> => await import("./dispatch");
@@ -77,6 +96,7 @@ describe("mcp dispatch", () => {
     mockIpcHandlers.clear();
     mockWebContentsById.clear();
     mockAllWindows.length = 0;
+    mockStudioWindowIds.clear();
   });
 
   it("starts with an empty state snapshot", async () => {
@@ -132,9 +152,25 @@ describe("mcp dispatch", () => {
     const dispatch = await loadDispatch();
     await expect(dispatch.sendCommandToFocusedWindow("x", undefined)).rejects.toThrow("no window");
 
-    // A focused id whose window is gone also counts as having no window.
+    // A focused Studio window that has since closed also counts as having no window.
+    makeWindow(99);
     emitAppEvent("browser-window-focus", undefined, { webContents: { id: 99 } });
+    closeWindow(99);
     await expect(dispatch.sendCommandToFocusedWindow("x", undefined)).rejects.toThrow("no window");
+  });
+
+  it("ignores focus events from non-Studio windows (e.g. detached DevTools)", async () => {
+    const dispatch = await loadDispatch();
+    const studio = makeWindow(7);
+
+    emitAppEvent("browser-window-focus", undefined, { webContents: { id: 8 } });
+    // Target is still the first window (7), not the non-Studio window 8.
+    const promise = dispatch.sendCommandToFocusedWindow("x", undefined, { timeoutMs: 10 });
+    expect(studio.send).toHaveBeenCalledWith(
+      "mcp-command",
+      expect.objectContaining({ type: "x" }),
+    );
+    await expect(promise).rejects.toThrow("timed out");
   });
 
   it("caches snapshots from the focused window and drops snapshots from other windows", async () => {

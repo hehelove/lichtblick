@@ -6,6 +6,7 @@ import { BrowserWindow, app, ipcMain, webContents } from "electron";
 import Logger from "@lichtblick/log";
 import { PlayerPresence } from "@lichtblick/suite-base/src/players/types";
 
+import StudioWindow from "../StudioWindow";
 import { McpStateSnapshot } from "../../common/types";
 
 const log = Logger.getLogger(__filename);
@@ -40,7 +41,10 @@ function targetWebContentsId(): number | undefined {
 }
 
 app.on("browser-window-focus", (_ev, browserWindow) => {
-  focusedWebContentsId = browserWindow.webContents.id;
+  // Ignore non-Studio windows (e.g. detached DevTools), like the app-menu focus handler does.
+  if (StudioWindow.fromWebContentsId(browserWindow.webContents.id) != undefined) {
+    focusedWebContentsId = browserWindow.webContents.id;
+  }
 });
 
 ipcMain.on("mcp-state-snapshot", (ev, newSnapshot: McpStateSnapshot) => {
