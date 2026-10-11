@@ -19,6 +19,7 @@ import getDevModeIcon from "./getDevModeIcon";
 import { getFilesToOpen } from "./getFilesToOpen";
 import injectFilesToOpen from "./injectFilesToOpen";
 import installChromeExtensions from "./installChromeExtensions";
+import { McpServer } from "./mcp/McpServer";
 import { parseCLIFlags } from "./parseCLIFlags";
 import {
   registerRosPackageProtocolHandlers,
@@ -234,6 +235,14 @@ export async function main(): Promise<void> {
     void updateLanguage();
   });
 
+  // The renderer notifies us when MCP-related settings changed so the server can
+  // restart with the new enabled/token/port values.
+  ipcMain.handle("update-mcp-server", async () => {
+    const mcp = McpServer.Instance();
+    await mcp.stop();
+    await mcp.start();
+  });
+
   // This method will be called when Electron has finished
   // initialization and is ready to create browser windows.
   // Some APIs can only be used after this event occurs.
@@ -322,6 +331,8 @@ export async function main(): Promise<void> {
 
     initialWindow.load();
     Menu.setApplicationMenu(initialWindow.getMenu()); // When the app is launching for the first time we don't receive the browser-window-focus event.
+
+    void McpServer.Instance().start();
   });
 
   // Quit when all windows are closed, except on macOS. There, it's common
@@ -331,5 +342,9 @@ export async function main(): Promise<void> {
     if (process.platform !== "darwin") {
       app.quit();
     }
+  });
+
+  app.on("will-quit", () => {
+    void McpServer.Instance().stop();
   });
 }
