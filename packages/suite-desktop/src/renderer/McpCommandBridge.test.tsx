@@ -67,7 +67,9 @@ describe("McpCommandBridge", () => {
 
   const lastReply = (): { ok: boolean; value?: unknown; error?: string } => {
     expect(sendMcpResult).toHaveBeenCalled();
-    return sendMcpResult.mock.calls[sendMcpResult.mock.calls.length - 1]![1] as {
+    const call = sendMcpResult.mock.calls[sendMcpResult.mock.calls.length - 1]!;
+    expect(call[0]).toEqual(7); // the reply echoes the command id (all sends use id 7)
+    return call[1] as {
       ok: boolean;
       value?: unknown;
       error?: string;
@@ -147,6 +149,29 @@ describe("McpCommandBridge", () => {
     send("playback.pause", {});
     await waitFor(() => { expect(pausePlayback).toHaveBeenCalled(); });
     expect(lastReply().value).toEqual({ action: "pause" });
+  });
+
+  it("routes get_state and step through the mounted bridge", async () => {
+    renderBridge();
+    send("playback.get_state", {});
+    await waitFor(() => { expect(sendMcpResult).toHaveBeenCalled(); });
+    const state = lastReply() as { ok: boolean; value: Record<string, unknown> };
+    expect(state.ok).toEqual(true);
+    expect(state.value).toEqual(
+      expect.objectContaining({
+        currentTime: { sec: 5, nsec: 0, seconds: 5 },
+        startTime: { sec: 0, nsec: 0, seconds: 0 },
+        endTime: { sec: 10, nsec: 0, seconds: 10 },
+        isPlaying: false,
+        presence: PlayerPresence.PRESENT,
+        playbackControlAvailable: true,
+      }),
+    );
+
+    send("playback.step", { direction: "backward" });
+    await waitFor(() => { expect(seekPlayback).toHaveBeenCalled(); });
+    expect(seekPlayback).toHaveBeenCalledWith({ sec: 4, nsec: 900000000 }); // 5s - 100ms default
+    expect(lastReply().ok).toEqual(true);
   });
 
   it("replies with an error for unknown command types", async () => {
