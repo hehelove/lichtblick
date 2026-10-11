@@ -7,7 +7,10 @@
 
 import net, { AddressInfo } from "net";
 
+import { PlayerPresence } from "@lichtblick/suite-base/src/players/types";
+
 import { McpServer, type McpServerSettings } from "./McpServer";
+import { registerDataTools } from "./tools/dataTools";
 
 const TOKEN = "test-token";
 
@@ -172,6 +175,48 @@ describe("McpServer", () => {
       ),
     );
     expect(hasPong).toBe(true);
+
+    await server.stop();
+  });
+
+  it("serves a registered data tool through the real SDK call path", async () => {
+    const server = makeServer();
+    registerDataTools(server, {
+      getState: () => ({
+        presence: PlayerPresence.PRESENT,
+        playerName: "rosbridge",
+        topics: [{ name: "/tf", schemaName: "std_msgs/String" }],
+        datatypes: {
+          "std_msgs/String": { name: "std_msgs/String", definitions: [{ name: "data", type: "string" }] },
+        },
+      }),
+    });
+    await server.start();
+
+    const sessionId = await initialize(port, TOKEN);
+    // get_schema takes a zod-shaped input, so this exercises the SDK's call-time input validation.
+    const res = await postRpc(
+      port,
+      TOKEN,
+      {
+        jsonrpc: "2.0",
+        id: 3,
+        method: "tools/call",
+        params: { name: "get_schema", arguments: { schemaName: "std_msgs/String" } },
+      },
+      sessionId,
+    );
+    expect(res.status).toEqual(200);
+
+    const messages = (await readJsonRpcMessages(res)) as Array<{
+      result?: { content?: Array<{ type: string; text: string }>; isError?: boolean };
+    }>;
+    const result = messages.find((msg) => msg.result?.content != undefined)?.result;
+    expect(result?.isError).toEqual(undefined); // the zod input shape parsed through the real SDK
+    expect(result != undefined ? JSON.parse(result.content![0]!.text) : undefined).toEqual({
+      name: "std_msgs/String",
+      definitions: [{ name: "data", type: "string" }],
+    });
 
     await server.stop();
   });

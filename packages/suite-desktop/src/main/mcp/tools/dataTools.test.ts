@@ -85,7 +85,12 @@ describe("mcp data tools", () => {
 
   it("get_schema declares a required string schemaName input", () => {
     const tools = makeTools(EMPTY_SNAPSHOT);
-    expect(Object.keys(tools.get("get_schema")!.inputSchema ?? {})).toEqual(["schemaName"]);
+    const shape = tools.get("get_schema")!.inputSchema ?? {};
+    expect(Object.keys(shape)).toEqual(["schemaName"]);
+    const schemaName = shape["schemaName"] as { safeParse: (v: unknown) => { success: boolean } };
+    expect(schemaName.safeParse("std_msgs/String").success).toEqual(true);
+    expect(schemaName.safeParse(123).success).toEqual(false);
+    expect(schemaName.safeParse(undefined).success).toEqual(false); // required, not optional
   });
 
   it("list_topics returns an empty list for an empty snapshot and never throws", async () => {
