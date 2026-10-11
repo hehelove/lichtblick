@@ -48,7 +48,7 @@ function parseJson(result: ToolResult): unknown {
 }
 
 function schemaOf(tool: RegisteredTool, key: string): { safeParse: (v: unknown) => { success: boolean } } {
-  return (tool.inputSchema ?? {})[key] as { safeParse: (v: unknown) => { success: boolean } };
+  return tool.inputSchema?.[key] as { safeParse: (v: unknown) => { success: boolean } };
 }
 
 describe("mcp script tools", () => {
@@ -101,9 +101,7 @@ describe("mcp script tools", () => {
     const name = schemaOf(tool, "name");
     expect(name.safeParse(undefined).success).toEqual(true); // optional
     expect(name.safeParse(42).success).toEqual(false);
-    const maxMessages = schemaOf(tool, "maxMessages") as {
-      safeParse: (v: unknown) => { success: boolean; data?: unknown };
-    };
+    const maxMessages = schemaOf(tool, "maxMessages");
     expect(maxMessages.safeParse(undefined)).toEqual(
       expect.objectContaining({ success: true, data: 100 }),
     );
@@ -119,9 +117,11 @@ describe("mcp script tools", () => {
     });
     const result = await callTool(makeTools().get("user_script_run")!, { sourceCode: "// x" });
     // The only tool overriding the 60s dispatch default: script runs poll and batch-collect.
+    // maxMessages forwards as-given (the zod schema defaults it on real calls; the renderer
+    // command handler applies its own ?? 100 default for direct invocations).
     expect(sendCommand).toHaveBeenCalledWith(
       "script.run",
-      { sourceCode: "// x", name: undefined, maxMessages: 100 },
+      { sourceCode: "// x", name: undefined, maxMessages: undefined },
       { timeoutMs: 120_000 },
     );
     expect(result.isError).toEqual(undefined);

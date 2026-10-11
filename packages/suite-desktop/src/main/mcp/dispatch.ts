@@ -5,8 +5,8 @@ import { BrowserWindow, app, ipcMain, webContents } from "electron";
 
 import Logger from "@lichtblick/log";
 
-import StudioWindow from "../StudioWindow";
 import { McpStateSnapshot } from "../../common/types";
+import StudioWindow from "../StudioWindow";
 
 const log = Logger.getLogger(__filename);
 

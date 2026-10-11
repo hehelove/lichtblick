@@ -80,7 +80,7 @@ function makeWindow(id: number): { id: number; send: jest.Mock } {
 function closeWindow(id: number): void {
   mockStudioWindowIds.delete(id);
   mockWebContentsById.delete(id);
-  const index = mockAllWindows.findIndex((window) => window.webContents.id === id);
+  const index = mockAllWindows.findIndex((win) => win.webContents.id === id);
   if (index >= 0) {
     mockAllWindows.splice(index, 1);
   }

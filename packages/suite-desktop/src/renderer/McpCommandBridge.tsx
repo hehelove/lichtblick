@@ -18,16 +18,16 @@ import {
 } from "@lichtblick/suite-base/src/context/CurrentLayoutContext";
 import { useLayoutManager } from "@lichtblick/suite-base/src/context/LayoutManagerContext";
 import { useUserScriptState } from "@lichtblick/suite-base/src/context/UserScriptStateContext";
-import type { ILayoutManager } from "@lichtblick/suite-base/src/services/ILayoutManager";
-import { MAX_SUPPORTED_LAYOUT_VERSION } from "@lichtblick/suite-base/src/providers/CurrentLayoutProvider/constants";
 import { DIAGNOSTIC_SEVERITY } from "@lichtblick/suite-base/src/players/UserScriptPlayer/constants";
 import type {
   Diagnostic,
   UserScriptLog,
 } from "@lichtblick/suite-base/src/players/UserScriptPlayer/types";
 import type { MessageEvent, Topic } from "@lichtblick/suite-base/src/players/types";
-import { validateLayoutData } from "@lichtblick/suite-base/src/util/layout";
+import { MAX_SUPPORTED_LAYOUT_VERSION } from "@lichtblick/suite-base/src/providers/CurrentLayoutProvider/constants";
+import type { ILayoutManager } from "@lichtblick/suite-base/src/services/ILayoutManager";
 import type { UserScript, UserScripts } from "@lichtblick/suite-base/src/types/panels";
+import { validateLayoutData } from "@lichtblick/suite-base/src/util/layout";
 
 import { Desktop } from "../common/types";
 
@@ -326,8 +326,8 @@ export type ScriptRunCommandDeps = {
   pollTimeoutMs?: number;
 };
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+async function sleep(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /** Serializes a script output message-event whole-but-JSON-safe (bigint payloads stringify). */
@@ -418,7 +418,7 @@ export async function executeScriptRunCommand(
   if (name != undefined && (typeof name !== "string" || name.length === 0)) {
     throw new Error("name must be a non-empty string when provided");
   }
-  const limit = maxMessages == undefined ? 100 : maxMessages;
+  const limit = maxMessages ?? 100;
   if (typeof limit !== "number" || !Number.isInteger(limit) || limit < 1) {
     throw new Error("maxMessages must be a positive integer");
   }

@@ -11,9 +11,9 @@ import CurrentLayoutContext, {
 } from "@lichtblick/suite-base/src/context/CurrentLayoutContext";
 import LayoutManagerContext from "@lichtblick/suite-base/src/context/LayoutManagerContext";
 import { UserScriptStateProvider } from "@lichtblick/suite-base/src/context/UserScriptStateContext";
+import { PlayerPresence, type Topic } from "@lichtblick/suite-base/src/players/types";
 import type { ILayoutManager } from "@lichtblick/suite-base/src/services/ILayoutManager";
 import type { Layout } from "@lichtblick/suite-base/src/services/ILayoutStorage";
-import { PlayerPresence, type Topic } from "@lichtblick/suite-base/src/players/types";
 import type { UserScripts } from "@lichtblick/suite-base/src/types/panels";
 
 import McpCommandBridge, {
@@ -773,6 +773,9 @@ describe("executeScriptRunCommand", () => {
   /** A fake async iterator yielding the given batch-iterator results. */
   function fakeIterator(results: unknown[], gate?: Promise<void>) {
     const state = { nextCalls: 0 };
+    const returnFn = jest.fn(
+      async () => ({ done: true as const, value: undefined }) as IteratorResult<unknown>,
+    );
     const it = {
       async next(): Promise<IteratorResult<unknown>> {
         state.nextCalls++;
@@ -782,12 +785,12 @@ describe("executeScriptRunCommand", () => {
         }
         return { done: false as const, value: results[state.nextCalls - 1]! };
       },
-      return: jest.fn(async () => ({ done: true as const, value: undefined }) as IteratorResult<unknown>),
+      return: returnFn,
       [Symbol.asyncIterator]() {
         return it;
       },
     };
-    return { it: it as unknown as AsyncIterableIterator<unknown>, state };
+    return { it: it as unknown as AsyncIterableIterator<unknown>, state, returnFn };
   }
 
   const msgEvent = (i: number) => ({
@@ -877,8 +880,8 @@ describe("executeScriptRunCommand", () => {
   const defaultIterator = (results: unknown[], gate?: Promise<void>) => (topic: string) =>
     topic === "/script_out" ? fakeIterator(results, gate).it : undefined;
 
-  const run = (payload: unknown, deps: ScriptRunCommandDeps) =>
-    executeScriptRunCommand({ type: "script.run", payload }, deps);
+  const run = async (payload: unknown, deps: ScriptRunCommandDeps) =>
+    await executeScriptRunCommand({ type: "script.run", payload }, deps);
 
   it("writes the temp script, waits for the output topic, and returns the collected messages", async () => {
     const wired = makeWired({
@@ -922,7 +925,7 @@ describe("executeScriptRunCommand", () => {
       expect.objectContaining({ count: 2, messages: [serialized(0), serialized(1)] }),
     );
     expect(it.state.nextCalls).toEqual(2); // messages beyond maxMessages are not collected
-    expect(it.it.return).toHaveBeenCalled(); // for-await break releases the iterator
+    expect(it.returnFn).toHaveBeenCalled(); // for-await break releases the iterator
   });
 
   it("rejects live sources with the exact error and cleans up the temp script", async () => {
@@ -1037,7 +1040,7 @@ describe("executeScriptRunCommand", () => {
       },
     };
     const wired = makeWired({
-      iterator: () => throwing as unknown as AsyncIterableIterator<unknown>,
+      iterator: () => throwing,
     });
     await expect(run({ sourceCode: "// x", maxMessages: 10 }, wired.deps)).rejects.toThrow(
       "iterator exploded",

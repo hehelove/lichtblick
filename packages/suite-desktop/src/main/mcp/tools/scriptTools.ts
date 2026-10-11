@@ -151,11 +151,11 @@ export function registerScriptTools(
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
     },
     // The only tool overriding the 60s dispatch default: the run polls for topic registration and
-    // batch-collects the whole file. The ?? mirrors the schema default so direct cb calls agree.
+    // batch-collects the whole file.
     async ({ sourceCode, name, maxMessages }) =>
       await run(
         "script.run",
-        { sourceCode, name, maxMessages: maxMessages ?? 100 },
+        { sourceCode, name, maxMessages },
         { timeoutMs: 120_000 },
       ),
   );

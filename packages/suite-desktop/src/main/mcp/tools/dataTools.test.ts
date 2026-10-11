@@ -6,9 +6,9 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 
+import { registerDataTools } from "./dataTools";
 import type { McpStateSnapshot } from "../../../common/types";
 
-import { registerDataTools } from "./dataTools";
 
 type ToolResult = {
   content: Array<{ type: string; text: string }>;

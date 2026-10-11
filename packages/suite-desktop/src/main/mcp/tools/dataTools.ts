@@ -8,7 +8,6 @@
 import { z } from "zod";
 
 import type { McpStateSnapshot } from "../../../common/types";
-
 import type { McpServer } from "../McpServer";
 
 export type DataToolDeps = {
@@ -49,7 +48,7 @@ export function registerDataTools(mcp: Pick<McpServer, "registerTool">, deps: Da
     },
     ({ schemaName }) => {
       const definition = deps.getState().datatypes[schemaName];
-      if (definition === undefined) {
+      if (definition == undefined) {
         // A missing schema is a domain-level outcome, not a server failure: report it as a
         // tool error (isError) rather than throwing.
         return {
