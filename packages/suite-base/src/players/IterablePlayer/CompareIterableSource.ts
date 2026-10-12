@@ -228,87 +228,100 @@ export class CompareIterableSource implements IDeserializedIterableSource {
     };
     const pendingAlerts: IteratorResult[] = [];
     const heads: Head[] = [];
-    for (const slot of this.#initialized) {
-      const topics = perSlotTopics.get(slot.input.slot);
-      if (topics == undefined || topics.size === 0) {
-        continue;
+    try {
+      for (const slot of this.#initialized) {
+        const topics = perSlotTopics.get(slot.input.slot);
+        if (topics == undefined || topics.size === 0) {
+          continue;
+        }
+        const childArgs: MessageIteratorArgs = {
+          topics,
+          consumptionType: args.consumptionType,
+        };
+        // 反算不 clamp:早于子源起点则子源自然从头迭代,晚于终点则自然空转
+        if (args.start != undefined) {
+          childArgs.start = toChildDomain(slot, args.start);
+        }
+        if (args.end != undefined) {
+          childArgs.end = toChildDomain(slot, args.end);
+        }
+        heads.push({
+          slot,
+          iter: slot.input.source.messageIterator(childArgs),
+        });
       }
-      const childArgs: MessageIteratorArgs = {
-        topics,
-        consumptionType: args.consumptionType,
-      };
-      // 反算不 clamp:早于子源起点则子源自然从头迭代,晚于终点则自然空转
-      if (args.start != undefined) {
-        childArgs.start = toChildDomain(slot, args.start);
-      }
-      if (args.end != undefined) {
-        childArgs.end = toChildDomain(slot, args.end);
-      }
-      heads.push({ slot, iter: slot.input.source.messageIterator(childArgs) });
-    }
 
-    const pull = async (head: Head): Promise<void> => {
-      for (;;) {
-        const res = await head.iter.next();
-        if (res.done ?? false) {
-          head.current = undefined;
-          head.mappedTime = undefined;
+      const pull = async (head: Head): Promise<void> => {
+        for (;;) {
+          const res = await head.iter.next();
+          if (res.done ?? false) {
+            head.current = undefined;
+            head.mappedTime = undefined;
+            return;
+          }
+          if (res.value.type === "alert") {
+            pendingAlerts.push(res.value); // 无时间戳,缓存后立即冲刷
+            continue;
+          }
+          head.current = res.value;
+          head.mappedTime =
+            res.value.type === "message-event"
+              ? toElapsed(head.slot, res.value.msgEvent.receiveTime)
+              : toElapsed(head.slot, res.value.stamp);
           return;
         }
-        if (res.value.type === "alert") {
-          pendingAlerts.push(res.value); // 无时间戳,缓存后立即冲刷
+      };
+
+      await Promise.all(
+        heads.map(async (head) => {
+          await pull(head);
+        }),
+      );
+
+      for (;;) {
+        const alert = pendingAlerts.shift();
+        if (alert != undefined) {
+          yield alert;
           continue;
         }
-        head.current = res.value;
-        head.mappedTime =
-          res.value.type === "message-event"
-            ? toElapsed(head.slot, res.value.msgEvent.receiveTime)
-            : toElapsed(head.slot, res.value.stamp);
-        return;
-      }
-    };
-
-    await Promise.all(
-      heads.map(async (head) => {
-        await pull(head);
-      }),
-    );
-
-    for (;;) {
-      const alert = pendingAlerts.shift();
-      if (alert != undefined) {
-        yield alert;
-        continue;
-      }
-      let min: Head | undefined;
-      for (const head of heads) {
-        if (head.current == undefined || head.mappedTime == undefined) {
-          continue;
+        let min: Head | undefined;
+        for (const head of heads) {
+          if (head.current == undefined || head.mappedTime == undefined) {
+            continue;
+          }
+          if (
+            min == undefined ||
+            compareTime(head.mappedTime, min.mappedTime!) < 0
+          ) {
+            min = head; // 严格小于:平局时保住先入者(槽位字母序)
+          }
         }
-        if (
-          min == undefined ||
-          compareTime(head.mappedTime, min.mappedTime!) < 0
-        ) {
-          min = head; // 严格小于:平局时保住先入者(槽位字母序)
+        if (min == undefined) {
+          return;
         }
+        const current = min.current!;
+        if (current.type === "message-event") {
+          yield {
+            type: "message-event",
+            msgEvent: {
+              ...current.msgEvent,
+              topic: `${current.msgEvent.topic}@${min.slot.input.slot}`,
+              receiveTime: toElapsed(min.slot, current.msgEvent.receiveTime),
+            },
+          };
+        } else if (current.type === "stamp") {
+          yield { type: "stamp", stamp: toElapsed(min.slot, current.stamp) };
+        }
+        await pull(min);
       }
-      if (min == undefined) {
-        return;
-      }
-      const current = min.current!;
-      if (current.type === "message-event") {
-        yield {
-          type: "message-event",
-          msgEvent: {
-            ...current.msgEvent,
-            topic: `${current.msgEvent.topic}@${min.slot.input.slot}`,
-            receiveTime: toElapsed(min.slot, current.msgEvent.receiveTime),
-          },
-        };
-      } else if (current.type === "stamp") {
-        yield { type: "stamp", stamp: toElapsed(min.slot, current.stamp) };
-      }
-      await pull(min);
+    } finally {
+      // Consumer `.return()`(IterablePlayer 每次 seek/stop 都会调用)或中途抛错都会走到这里;
+      // 不显式关闭子迭代器,它们会永久挂起在 yield 处,子源 finally(如 pool pin 释放)永不执行。
+      await Promise.allSettled(
+        heads.map(async (head) => {
+          await head.iter.return?.();
+        }),
+      );
     }
   }
 
@@ -317,9 +330,11 @@ export class CompareIterableSource implements IDeserializedIterableSource {
   ): Promise<MessageEvent[]> {
     const perSlotTopics = this.#partitionTopics(args.topics);
 
-    const out: MessageEvent[] = [];
+    // 记录 slotIndex,平局时按槽位序排序:Promise.all 的完成顺序不确定,
+    // 仅靠稳定排序无法保证映射时间相同的消息顺序确定。
+    const out: { event: MessageEvent; slotIndex: number }[] = [];
     await Promise.all(
-      this.#initialized.map(async (slot) => {
+      this.#initialized.map(async (slot, slotIndex) => {
         const topics = perSlotTopics.get(slot.input.slot);
         if (topics == undefined || topics.size === 0) {
           return;
@@ -331,14 +346,20 @@ export class CompareIterableSource implements IDeserializedIterableSource {
         });
         for (const event of events) {
           out.push({
-            ...event,
-            topic: `${event.topic}@${slot.input.slot}`,
-            receiveTime: toElapsed(slot, event.receiveTime),
+            event: {
+              ...event,
+              topic: `${event.topic}@${slot.input.slot}`,
+              receiveTime: toElapsed(slot, event.receiveTime),
+            },
+            slotIndex,
           });
         }
       }),
     );
-    out.sort((a, b) => compareTime(a.receiveTime, b.receiveTime));
-    return out;
+    out.sort((a, b) => {
+      const byTime = compareTime(a.event.receiveTime, b.event.receiveTime);
+      return byTime !== 0 ? byTime : a.slotIndex - b.slotIndex;
+    });
+    return out.map((entry) => entry.event);
   }
 }

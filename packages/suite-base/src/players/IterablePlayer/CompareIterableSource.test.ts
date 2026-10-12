@@ -4,8 +4,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
 // This Source Code Form is subject to the terms of the Mozilla Public
-// License, v. 2.0. If a copy of the MPL was not distributed with this
-// file, You can obtain one at http://mozilla.org/MPL/2.0/.
+// License, v2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at http://mozilla.org/MPL/2.0/
 
 import { compare, Time } from "@lichtblick/rostime";
 import { SubscribePayload } from "@lichtblick/suite-base/players/types";
@@ -290,11 +290,13 @@ describe("CompareIterableSource.messageIterator / getBackfillMessages", () => {
     source: CompareIterableSource,
     topics: string[],
     start?: Time,
+    consumptionType?: "full" | "partial",
   ) {
     const results: IteratorResult[] = [];
     for await (const result of source.messageIterator({
       topics: new Map(topics.map((t) => [t, subscribe(t)])),
       start,
+      consumptionType,
     })) {
       results.push(result);
     }
@@ -414,11 +416,13 @@ describe("CompareIterableSource.messageIterator / getBackfillMessages", () => {
   });
 
   it("passes through alerts without stalling the merge", async () => {
+    const seenConsumptionTypes: (string | undefined)[] = [];
     const child: IDeserializedIterableSource = {
       ...makeFakeSource(fakeInit(), [
         { topic: "/tf", receiveTime: { sec: 100, nsec: 0 } },
       ]),
-      async *messageIterator() {
+      async *messageIterator(args) {
+        seenConsumptionTypes.push(args.consumptionType);
         yield {
           type: "alert",
           connectionId: 1,
@@ -441,9 +445,76 @@ describe("CompareIterableSource.messageIterator / getBackfillMessages", () => {
       offsets: new Map(),
     });
     await source.initialize();
-    const results = await collect(source, ["/tf@A"]);
+    const results = await collect(source, ["/tf@A"], undefined, "partial");
     expect(results[0]?.type).toEqual("alert");
     expect(results[1]?.type).toEqual("message-event");
+    // consumptionType 原样透传给子源
+    expect(seenConsumptionTypes).toEqual(["partial"]);
+  });
+
+  it("maps stamp results onto the elapsed timeline", async () => {
+    // anchor 100 + offset +1s → 子域 103s 映射为流逝域 4s
+    const child: IDeserializedIterableSource = {
+      ...makeFakeSource(fakeInit()),
+      async *messageIterator() {
+        yield { type: "stamp", stamp: { sec: 103, nsec: 0 } };
+      },
+    };
+    const source = new CompareIterableSource({
+      slots: [{ source: child, slot: "A", fileName: "a.mcap" }],
+      offsets: new Map([["A", 1_000_000_000n]]),
+    });
+    await source.initialize();
+    const results = await collect(source, ["/tf@A"]);
+    expect(results).toEqual([{ type: "stamp", stamp: { sec: 4, nsec: 0 } }]);
+  });
+
+  it("closes every child iterator when the consumer cancels the merged iterator", async () => {
+    // IterablePlayer 在每次 seek/stop 时都会对迭代器调用 .return();
+    // 合并迭代器必须把关闭传播给全部子迭代器,否则子源 finally(如 pool pin)永不执行。
+    const cleanups = [false, false];
+    const makeChild = (index: number): IDeserializedIterableSource => ({
+      ...makeFakeSource(fakeInit(), [
+        { topic: "/tf", receiveTime: { sec: 100, nsec: 0 } },
+        { topic: "/tf", receiveTime: { sec: 102, nsec: 0 } },
+      ]),
+      async *messageIterator() {
+        try {
+          for (const sec of [100, 102]) {
+            yield {
+              type: "message-event",
+              msgEvent: {
+                topic: "/tf",
+                receiveTime: { sec, nsec: 0 },
+                message: {},
+                sizeInBytes: 4,
+                schemaName: "tf2_msgs/TFMessage",
+              },
+            };
+          }
+        } finally {
+          cleanups[index] = true;
+        }
+      },
+    });
+    const source = new CompareIterableSource({
+      slots: [
+        { source: makeChild(0), slot: "A", fileName: "a.mcap" },
+        { source: makeChild(1), slot: "B", fileName: "b.mcap" },
+      ],
+      offsets: new Map(),
+    });
+    await source.initialize();
+    const iter = source.messageIterator({
+      topics: new Map([
+        ["/tf@A", subscribe("/tf@A")],
+        ["/tf@B", subscribe("/tf@B")],
+      ]),
+    });
+    const first = await iter.next();
+    expect(first.done ?? false).toBe(false);
+    await iter.return?.();
+    expect(cleanups).toEqual([true, true]);
   });
 
   it("getBackfillMessages reverse-maps, suffixes, and sorts by mapped time", async () => {
@@ -459,11 +530,15 @@ describe("CompareIterableSource.messageIterator / getBackfillMessages", () => {
           slot: "B",
           fileName: "b.mcap",
           init: fakeInit(),
-          messages: [{ topic: "/tf", receiveTime: { sec: 102, nsec: 0 } }],
+          messages: [
+            // 子域 101 映射为 0,与 A 的 0 平局 → 槽位序 A 在前
+            { topic: "/tf", receiveTime: { sec: 101, nsec: 0 } },
+            { topic: "/tf", receiveTime: { sec: 102, nsec: 0 } },
+          ],
         },
       ],
       new Map([["B", -1_000_000_000n]]),
-    ); // B 偏移 -1s → 映射时间 1
+    ); // B 偏移 -1s → 子域 101/102 映射为 0/1
     await source.initialize();
     const events = await source.getBackfillMessages({
       topics: new Map([
@@ -474,6 +549,7 @@ describe("CompareIterableSource.messageIterator / getBackfillMessages", () => {
     });
     expect(events.map((e) => `${e.topic}@${e.receiveTime.sec}`)).toEqual([
       "/tf@A@0",
+      "/tf@B@0",
       "/tf@B@1",
     ]);
   });
