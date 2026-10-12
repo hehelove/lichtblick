@@ -5,6 +5,7 @@ import { BasicBuilder } from "@lichtblick/test-builders";
 
 import { HttpError } from "./HttpError";
 import { HttpService } from "./HttpService";
+import HttpServiceSingleton from "./HttpService";
 
 // Mock fetch globally
 const mockFetch = jest.fn();
@@ -726,5 +727,45 @@ describe("HttpService", () => {
         expect.any(Object),
       );
     });
+  });
+});
+
+describe("HttpService.setAuthToken", () => {
+  let fetchMock: jest.Mock;
+  let originalFetch: typeof fetch;
+
+  beforeEach(() => {
+    originalFetch = global.fetch;
+    fetchMock = jest.fn().mockResolvedValue(
+      new Response(JSON.stringify({ data: {}, timestamp: "", path: "" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    global.fetch = fetchMock;
+  });
+  afterEach(() => {
+    global.fetch = originalFetch;
+    HttpServiceSingleton.setAuthToken(undefined);
+  });
+
+  it("token 设置时附带 Authorization: Bearer", async () => {
+    HttpServiceSingleton.setAuthToken("xs_pat_secret");
+    await HttpServiceSingleton.get<{ foo: string }>("layouts/x");
+    const headers = (fetchMock.mock.calls[0]![1] as RequestInit).headers as Record<string, string>;
+    expect(headers["Authorization"]).toBe("Bearer xs_pat_secret");
+  });
+
+  it("token 未设置时不附 Authorization", async () => {
+    await HttpServiceSingleton.get<{ foo: string }>("layouts/x");
+    const headers = (fetchMock.mock.calls[0]![1] as RequestInit).headers as Record<string, string>;
+    expect(headers["Authorization"]).toBeUndefined();
+  });
+
+  it("调用方显式 Authorization 优先，不被 token 覆盖", async () => {
+    HttpServiceSingleton.setAuthToken("xs_pat_secret");
+    await HttpServiceSingleton.get<{ foo: string }>("layouts/x", {}, { headers: { Authorization: "Bearer explicit" } });
+    const headers = (fetchMock.mock.calls[0]![1] as RequestInit).headers as Record<string, string>;
+    expect(headers["Authorization"]).toBe("Bearer explicit");
   });
 });
