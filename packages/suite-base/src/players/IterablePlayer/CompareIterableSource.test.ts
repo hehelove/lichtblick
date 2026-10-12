@@ -4,13 +4,18 @@
 // SPDX-License-Identifier: MPL-2.0
 
 // This Source Code Form is subject to the terms of the Mozilla Public
-// License, v2.0. If a copy of the MPL was not distributed with this
-// file, You can obtain one at http://mozilla.org/MPL/2.0/
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-import { compare } from "@lichtblick/rostime";
+import { compare, Time } from "@lichtblick/rostime";
+import { SubscribePayload } from "@lichtblick/suite-base/players/types";
 
 import { CompareIterableSource } from "./CompareIterableSource";
-import { IDeserializedIterableSource, Initialization } from "./IIterableSource";
+import {
+  IDeserializedIterableSource,
+  Initialization,
+  IteratorResult,
+} from "./IIterableSource";
 
 function fakeInit(overrides: Partial<Initialization> = {}): Initialization {
   return {
@@ -28,29 +33,84 @@ function fakeInit(overrides: Partial<Initialization> = {}): Initialization {
       ],
     ]),
     profile: "ros2",
-    publishersByTopic: new Map(),
+    publishersByTopic: new Map([["/tf", new Set(["/tf_pub"])]]),
+    metadata: [{ name: "session-1", metadata: { creator: "lichtblick" } }],
     alerts: [],
     ...overrides,
   };
 }
 
-function makeFakeSource(init: Initialization): IDeserializedIterableSource {
+type FakeMessage = {
+  topic: string;
+  receiveTime: { sec: number; nsec: number };
+};
+
+function makeFakeSource(
+  init: Initialization,
+  messages: FakeMessage[] = [],
+): IDeserializedIterableSource {
   return {
     sourceType: "deserialized",
     initialize: async () => init,
-    // Task 4 会替换为可产出消息的版本;本任务用例只测 initialize
-    async *messageIterator() {},
-    getBackfillMessages: async () => [],
+    async *messageIterator(args) {
+      for (const msg of messages) {
+        if (!args.topics.has(msg.topic)) {
+          continue;
+        }
+        if (
+          args.start != undefined &&
+          compare(msg.receiveTime, args.start) < 0
+        ) {
+          continue;
+        }
+        if (args.end != undefined && compare(msg.receiveTime, args.end) > 0) {
+          continue;
+        }
+        yield {
+          type: "message-event",
+          msgEvent: {
+            topic: msg.topic,
+            receiveTime: msg.receiveTime,
+            message: { payload: msg.topic },
+            sizeInBytes: 4,
+            schemaName: "tf2_msgs/TFMessage",
+          },
+        };
+      }
+    },
+    getBackfillMessages: async (args) => {
+      const out = [];
+      for (const msg of messages) {
+        if (!args.topics.has(msg.topic)) {
+          continue;
+        }
+        if (compare(msg.receiveTime, args.time) <= 0) {
+          out.push({
+            topic: msg.topic,
+            receiveTime: msg.receiveTime,
+            message: {},
+            sizeInBytes: 4,
+            schemaName: "tf2_msgs/TFMessage",
+          });
+        }
+      }
+      return out;
+    },
   };
 }
 
 function makeSource(
-  slots: Array<{ slot: string; fileName: string; init: Initialization }>,
+  slots: Array<{
+    slot: string;
+    fileName: string;
+    init: Initialization;
+    messages?: FakeMessage[];
+  }>,
   offsets?: Map<string, bigint>,
 ) {
   return new CompareIterableSource({
     slots: slots.map((s) => ({
-      source: makeFakeSource(s.init),
+      source: makeFakeSource(s.init, s.messages ?? []),
       slot: s.slot,
       fileName: s.fileName,
     })),
@@ -67,6 +127,19 @@ describe("CompareIterableSource.initialize", () => {
     const init = await source.initialize();
     expect(init.topics.map((t) => t.name).sort()).toEqual(["/tf@A", "/tf@B"]);
     expect([...init.topicStats.keys()].sort()).toEqual(["/tf@A", "/tf@B"]);
+    // publishersByTopic 同样加槽位后缀;metadata 加槽位前缀;schemaName 不受命名空间影响
+    expect([...init.publishersByTopic.keys()].sort()).toEqual([
+      "/tf@A",
+      "/tf@B",
+    ]);
+    expect(init.metadata?.map((m) => m.name).sort()).toEqual([
+      "[A] session-1",
+      "[B] session-1",
+    ]);
+    expect(init.topics.map((t) => t.schemaName)).toEqual([
+      "tf2_msgs/TFMessage",
+      "tf2_msgs/TFMessage",
+    ]);
     expect(init.name).toEqual("Comparison: a.mcap, b.bag");
   });
 
@@ -124,6 +197,26 @@ describe("CompareIterableSource.initialize", () => {
     expect(init.profile).toEqual("ros2");
     expect(init.alerts.some((a) => a.message.includes("profile"))).toEqual(
       true,
+    );
+  });
+
+  it("appends child alerts after comparison-generated alerts", async () => {
+    const source = makeSource([
+      {
+        slot: "A",
+        fileName: "a.mcap",
+        init: fakeInit({
+          alerts: [{ severity: "warn", message: "child hiccup" }],
+        }),
+      },
+      { slot: "B", fileName: "b.bag", init: fakeInit({ profile: "ros1" }) },
+    ]);
+    const init = await source.initialize();
+    const messages = init.alerts.map((a) => a.message);
+    expect(messages).toContain("child hiccup");
+    // 子源 alert 排在对比生成的 alert(profile 冲突)之后
+    expect(messages.indexOf("child hiccup")).toBeGreaterThan(
+      messages.findIndex((m) => m.includes("profile")),
     );
   });
 
@@ -185,5 +278,203 @@ describe("CompareIterableSource.initialize", () => {
     const init = await source.initialize();
     expect(init.start).toEqual({ sec: -301, nsec: 500_000_000 }); // -300.5s normalized
     expect(init.start.nsec).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe("CompareIterableSource.messageIterator / getBackfillMessages", () => {
+  function subscribe(topic: string): SubscribePayload {
+    return { topic, preloadType: "full" };
+  }
+
+  async function collect(
+    source: CompareIterableSource,
+    topics: string[],
+    start?: Time,
+  ) {
+    const results: IteratorResult[] = [];
+    for await (const result of source.messageIterator({
+      topics: new Map(topics.map((t) => [t, subscribe(t)])),
+      start,
+    })) {
+      results.push(result);
+    }
+    return results;
+  }
+
+  it("merges by mapped time with per-slot topic suffix and rewritten receiveTime", async () => {
+    // A: anchor 100, offset 0  → /tf@A times 0, 2, 4
+    // B: anchor 100, offset +1s → /tf@B times 1, 3
+    const source = makeSource(
+      [
+        {
+          slot: "A",
+          fileName: "a.mcap",
+          init: fakeInit(),
+          messages: [
+            { topic: "/tf", receiveTime: { sec: 100, nsec: 0 } },
+            { topic: "/tf", receiveTime: { sec: 102, nsec: 0 } },
+            { topic: "/tf", receiveTime: { sec: 104, nsec: 0 } },
+          ],
+        },
+        {
+          slot: "B",
+          fileName: "b.mcap",
+          init: fakeInit(),
+          messages: [
+            { topic: "/tf", receiveTime: { sec: 100, nsec: 0 } },
+            { topic: "/tf", receiveTime: { sec: 102, nsec: 0 } },
+          ],
+        },
+      ],
+      new Map([["B", 1_000_000_000n]]),
+    );
+    await source.initialize();
+    const results = await collect(source, ["/tf@A", "/tf@B"]);
+    expect(
+      results.map((r) =>
+        r.type === "message-event"
+          ? `${r.msgEvent.topic}@${r.msgEvent.receiveTime.sec}`
+          : "?",
+      ),
+    ).toEqual(["/tf@A@0", "/tf@B@1", "/tf@A@2", "/tf@B@3", "/tf@A@4"]);
+  });
+
+  it("breaks mapped-time ties by slot order", async () => {
+    const source = makeSource([
+      {
+        slot: "A",
+        fileName: "a.mcap",
+        init: fakeInit(),
+        messages: [{ topic: "/tf", receiveTime: { sec: 100, nsec: 0 } }],
+      },
+      {
+        slot: "B",
+        fileName: "b.mcap",
+        init: fakeInit(),
+        messages: [{ topic: "/tf", receiveTime: { sec: 100, nsec: 0 } }],
+      },
+    ]);
+    await source.initialize();
+    const results = await collect(source, ["/tf@A", "/tf@B"]);
+    const first = results[0] as {
+      type: "message-event";
+      msgEvent: { topic: string };
+    };
+    expect(first.msgEvent.topic).toEqual("/tf@A");
+  });
+
+  it("ignores topics without a slot suffix", async () => {
+    const source = makeSource([
+      {
+        slot: "A",
+        fileName: "a.mcap",
+        init: fakeInit(),
+        messages: [{ topic: "/tf", receiveTime: { sec: 100, nsec: 0 } }],
+      },
+    ]);
+    await source.initialize();
+    const results = await collect(source, ["/tf"]); // 无后缀
+    expect(results).toEqual([]);
+  });
+
+  it("reverse-maps iterator start into child domain per slot (no clamp)", async () => {
+    // 流逝域 start=3s → A(偏移0,anchor100) 子域 103;B(偏移+1s,anchor100) 子域 102
+    const source = makeSource(
+      [
+        {
+          slot: "A",
+          fileName: "a.mcap",
+          init: fakeInit(),
+          messages: [
+            { topic: "/tf", receiveTime: { sec: 100, nsec: 0 } },
+            { topic: "/tf", receiveTime: { sec: 105, nsec: 0 } },
+          ],
+        },
+        {
+          slot: "B",
+          fileName: "b.mcap",
+          init: fakeInit(),
+          messages: [{ topic: "/tf", receiveTime: { sec: 101, nsec: 0 } }],
+        },
+      ],
+      new Map([["B", 1_000_000_000n]]),
+    );
+    await source.initialize();
+    const results = await collect(source, ["/tf@A", "/tf@B"], {
+      sec: 3,
+      nsec: 0,
+    });
+    // A: 子域 ≥103 → 只有 105(映射 5);B: 子域 ≥102 → 无
+    expect(results).toHaveLength(1);
+    const ev = results[0] as {
+      type: "message-event";
+      msgEvent: { receiveTime: Time };
+    };
+    expect(ev.msgEvent.receiveTime).toEqual({ sec: 5, nsec: 0 });
+  });
+
+  it("passes through alerts without stalling the merge", async () => {
+    const child: IDeserializedIterableSource = {
+      ...makeFakeSource(fakeInit(), [
+        { topic: "/tf", receiveTime: { sec: 100, nsec: 0 } },
+      ]),
+      async *messageIterator() {
+        yield {
+          type: "alert",
+          connectionId: 1,
+          alert: { severity: "warn", message: "child hiccup" },
+        };
+        yield {
+          type: "message-event",
+          msgEvent: {
+            topic: "/tf",
+            receiveTime: { sec: 100, nsec: 0 },
+            message: {},
+            sizeInBytes: 0,
+            schemaName: "tf2_msgs/TFMessage",
+          },
+        };
+      },
+    };
+    const source = new CompareIterableSource({
+      slots: [{ source: child, slot: "A", fileName: "a.mcap" }],
+      offsets: new Map(),
+    });
+    await source.initialize();
+    const results = await collect(source, ["/tf@A"]);
+    expect(results[0]?.type).toEqual("alert");
+    expect(results[1]?.type).toEqual("message-event");
+  });
+
+  it("getBackfillMessages reverse-maps, suffixes, and sorts by mapped time", async () => {
+    const source = makeSource(
+      [
+        {
+          slot: "A",
+          fileName: "a.mcap",
+          init: fakeInit(),
+          messages: [{ topic: "/tf", receiveTime: { sec: 100, nsec: 0 } }],
+        },
+        {
+          slot: "B",
+          fileName: "b.mcap",
+          init: fakeInit(),
+          messages: [{ topic: "/tf", receiveTime: { sec: 102, nsec: 0 } }],
+        },
+      ],
+      new Map([["B", -1_000_000_000n]]),
+    ); // B 偏移 -1s → 映射时间 1
+    await source.initialize();
+    const events = await source.getBackfillMessages({
+      topics: new Map([
+        ["/tf@A", subscribe("/tf@A")],
+        ["/tf@B", subscribe("/tf@B")],
+      ]),
+      time: { sec: 10, nsec: 0 },
+    });
+    expect(events.map((e) => `${e.topic}@${e.receiveTime.sec}`)).toEqual([
+      "/tf@A@0",
+      "/tf@B@1",
+    ]);
   });
 });

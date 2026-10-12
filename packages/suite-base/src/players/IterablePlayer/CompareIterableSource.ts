@@ -9,7 +9,11 @@ import * as _ from "lodash-es";
 
 import { compare as compareTime, Time, toNanoSec } from "@lichtblick/rostime";
 import { MessageEvent, Metadata } from "@lichtblick/suite";
-import { PlayerAlert, TopicStats } from "@lichtblick/suite-base/players/types";
+import {
+  PlayerAlert,
+  TopicSelection,
+  TopicStats,
+} from "@lichtblick/suite-base/players/types";
 import { RosDatatypes } from "@lichtblick/suite-base/types/RosDatatypes";
 
 import {
@@ -58,8 +62,16 @@ function nsToTime(ns: bigint): Time {
   return { sec: Number(sec), nsec: Number(rem) };
 }
 
-// Task 4 的 messageIterator 复用 nsToTime 与这里的 anchorNs/offsetNs 做消息时间映射;
-// 届时再提升为实例字段(现在提升会因只写不读触发 TS6133)。
+/** Maps a child-domain time into the shared elapsed timeline. */
+function toElapsed(slot: InitializedSlot, time: Time): Time {
+  return nsToTime(toNanoSec(time) - slot.anchorNs + slot.offsetNs);
+}
+
+/** Maps an elapsed-domain time back into a child's recording domain. */
+function toChildDomain(slot: InitializedSlot, time: Time): Time {
+  return nsToTime(toNanoSec(time) - slot.offsetNs + slot.anchorNs);
+}
+
 type InitializedSlot = {
   input: CompareSlotInput;
   init: Initialization;
@@ -76,6 +88,7 @@ type InitializedSlot = {
 export class CompareIterableSource implements IDeserializedIterableSource {
   public readonly sourceType = "deserialized";
   readonly #options: CompareIterableSourceOptions;
+  #initialized: InitializedSlot[] = [];
 
   public constructor(options: CompareIterableSourceOptions) {
     this.#options = options;
@@ -104,6 +117,7 @@ export class CompareIterableSource implements IDeserializedIterableSource {
       anchorNs: toNanoSec(init.start),
       offsetNs: this.#options.offsets.get(input.slot) ?? 0n,
     }));
+    this.#initialized = initialized;
 
     const topics: TopicWithDecodingInfo[] = [];
     const topicStats = new Map<string, TopicStats>();
@@ -149,6 +163,11 @@ export class CompareIterableSource implements IDeserializedIterableSource {
       }
     }
 
+    // spec §5: 子源自身的 alert 原样并入,排在对比生成的 alert 之后(槽位序拼接)
+    for (const { init } of initialized) {
+      alerts.push(...init.alerts);
+    }
+
     let start: Time | undefined;
     let end: Time | undefined;
     for (const slot of initialized) {
@@ -178,18 +197,148 @@ export class CompareIterableSource implements IDeserializedIterableSource {
     };
   }
 
-  // eslint-disable-next-line require-yield -- 占位 stub,Task 4 填实现(BlockLoader.test.ts 同款豁免)
+  /** Partitions suffixed topics into per-slot selections keyed by base name. */
+  #partitionTopics(topics: TopicSelection): Map<string, TopicSelection> {
+    const perSlotTopics = new Map<string, TopicSelection>();
+    for (const topic of topics.keys()) {
+      const parsed = slotOfTopic(topic);
+      if (parsed == undefined) {
+        continue; // 无槽位后缀的 topic 不属于任何子源,静默忽略
+      }
+      let selection = perSlotTopics.get(parsed.slot);
+      if (selection == undefined) {
+        selection = new Map();
+        perSlotTopics.set(parsed.slot, selection);
+      }
+      selection.set(parsed.baseName, topics.get(topic)!);
+    }
+    return perSlotTopics;
+  }
+
   public async *messageIterator(
-    _args: MessageIteratorArgs,
+    args: MessageIteratorArgs,
   ): AsyncIterableIterator<Readonly<IteratorResult>> {
-    // Task 4 实现
-    throw new Error("not implemented");
+    const perSlotTopics = this.#partitionTopics(args.topics);
+
+    type Head = {
+      slot: InitializedSlot;
+      iter: AsyncIterableIterator<Readonly<IteratorResult>>;
+      current?: Readonly<IteratorResult>;
+      mappedTime?: Time;
+    };
+    const pendingAlerts: IteratorResult[] = [];
+    const heads: Head[] = [];
+    for (const slot of this.#initialized) {
+      const topics = perSlotTopics.get(slot.input.slot);
+      if (topics == undefined || topics.size === 0) {
+        continue;
+      }
+      const childArgs: MessageIteratorArgs = {
+        topics,
+        consumptionType: args.consumptionType,
+      };
+      // 反算不 clamp:早于子源起点则子源自然从头迭代,晚于终点则自然空转
+      if (args.start != undefined) {
+        childArgs.start = toChildDomain(slot, args.start);
+      }
+      if (args.end != undefined) {
+        childArgs.end = toChildDomain(slot, args.end);
+      }
+      heads.push({ slot, iter: slot.input.source.messageIterator(childArgs) });
+    }
+
+    const pull = async (head: Head): Promise<void> => {
+      for (;;) {
+        const res = await head.iter.next();
+        if (res.done ?? false) {
+          head.current = undefined;
+          head.mappedTime = undefined;
+          return;
+        }
+        if (res.value.type === "alert") {
+          pendingAlerts.push(res.value); // 无时间戳,缓存后立即冲刷
+          continue;
+        }
+        head.current = res.value;
+        head.mappedTime =
+          res.value.type === "message-event"
+            ? toElapsed(head.slot, res.value.msgEvent.receiveTime)
+            : toElapsed(head.slot, res.value.stamp);
+        return;
+      }
+    };
+
+    await Promise.all(
+      heads.map(async (head) => {
+        await pull(head);
+      }),
+    );
+
+    for (;;) {
+      const alert = pendingAlerts.shift();
+      if (alert != undefined) {
+        yield alert;
+        continue;
+      }
+      let min: Head | undefined;
+      for (const head of heads) {
+        if (head.current == undefined || head.mappedTime == undefined) {
+          continue;
+        }
+        if (
+          min == undefined ||
+          compareTime(head.mappedTime, min.mappedTime!) < 0
+        ) {
+          min = head; // 严格小于:平局时保住先入者(槽位字母序)
+        }
+      }
+      if (min == undefined) {
+        return;
+      }
+      const current = min.current!;
+      if (current.type === "message-event") {
+        yield {
+          type: "message-event",
+          msgEvent: {
+            ...current.msgEvent,
+            topic: `${current.msgEvent.topic}@${min.slot.input.slot}`,
+            receiveTime: toElapsed(min.slot, current.msgEvent.receiveTime),
+          },
+        };
+      } else if (current.type === "stamp") {
+        yield { type: "stamp", stamp: toElapsed(min.slot, current.stamp) };
+      }
+      await pull(min);
+    }
   }
 
   public async getBackfillMessages(
-    _args: GetBackfillMessagesArgs,
+    args: GetBackfillMessagesArgs,
   ): Promise<MessageEvent[]> {
-    // Task 4 实现
-    return [];
+    const perSlotTopics = this.#partitionTopics(args.topics);
+
+    const out: MessageEvent[] = [];
+    await Promise.all(
+      this.#initialized.map(async (slot) => {
+        const topics = perSlotTopics.get(slot.input.slot);
+        if (topics == undefined || topics.size === 0) {
+          return;
+        }
+        const events = await slot.input.source.getBackfillMessages({
+          topics,
+          time: toChildDomain(slot, args.time),
+          abortSignal: args.abortSignal,
+        });
+        for (const event of events) {
+          out.push({
+            ...event,
+            topic: `${event.topic}@${slot.input.slot}`,
+            receiveTime: toElapsed(slot, event.receiveTime),
+          });
+        }
+      }),
+    );
+    out.sort((a, b) => compareTime(a.receiveTime, b.receiveTime));
+    return out;
   }
 }
