@@ -20,6 +20,25 @@ import { expandVideoSeekBackfill } from "@lichtblick/suite-base/players/Iterable
 import { Player } from "@lichtblick/suite-base/players/types";
 import { mergeMultipleFileNames } from "@lichtblick/suite-base/util/mergeMultipleFileName";
 
+/** Builds the worker-backed MCAP source shared by single/multi-file open and comparison mode. */
+export function buildMcapSource(
+  files: File[],
+  multiFileHydrationOverrides?: MultiFileHydrationOverrides,
+): WorkerSerializedIterableSource {
+  return new WorkerSerializedIterableSource({
+    initWorker: () => {
+      return new Worker(
+        // foxglove-depcheck-used: babel-plugin-transform-import-meta
+        new URL(
+          "@lichtblick/suite-base/players/IterablePlayer/Mcap/McapIterableSourceWorker.worker",
+          import.meta.url,
+        ),
+      );
+    },
+    initArgs: addMultiFileHydrationOverrides({ files }, multiFileHydrationOverrides),
+  });
+}
+
 class McapLocalDataSourceFactory implements IDataSourceFactory {
   private readonly multiFileHydrationOverrides?: MultiFileHydrationOverrides;
 
@@ -46,18 +65,7 @@ class McapLocalDataSourceFactory implements IDataSourceFactory {
       return;
     }
 
-    const source = new WorkerSerializedIterableSource({
-      initWorker: () => {
-        return new Worker(
-          // foxglove-depcheck-used: babel-plugin-transform-import-meta
-          new URL(
-            "@lichtblick/suite-base/players/IterablePlayer/Mcap/McapIterableSourceWorker.worker",
-            import.meta.url,
-          ),
-        );
-      },
-      initArgs: addMultiFileHydrationOverrides({ files }, this.multiFileHydrationOverrides),
-    });
+    const source = buildMcapSource(files, this.multiFileHydrationOverrides);
 
     return new IterablePlayer({
       metricsCollector: args.metricsCollector,
