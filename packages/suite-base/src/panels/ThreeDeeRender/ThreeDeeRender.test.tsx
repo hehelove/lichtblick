@@ -199,6 +199,7 @@ describe("ThreeDeeRender", () => {
       interfaceMode: "3d",
       testOptions: {},
       customCameraModels: new Map(),
+      getMetadata: () => [],
       ...propsOverrides,
     };
   };
@@ -257,6 +258,18 @@ describe("ThreeDeeRender", () => {
       </MockMessagePipelineProvider>,
     );
     expect(getByTestId("renderer-overlay")).toBeInTheDocument();
+  });
+
+  it("renders without a MessagePipelineProvider (sync root parity)", () => {
+    // The panel mounts inside createSyncRoot, a separate React root whose only
+    // ancestors are CaptureErrorBoundary and ForwardAnalyticsContextProvider.
+    // Regression: reading pipeline data through useMessagePipeline here crashed
+    // every 3D/Image panel at mount ("useGuaranteedContext got null").
+    const props = setup();
+
+    const { container } = render(<ThreeDeeRender {...props} />);
+
+    expect(container).toBeInTheDocument();
   });
 
   it("initializes with default camera state when no initial state is provided", () => {

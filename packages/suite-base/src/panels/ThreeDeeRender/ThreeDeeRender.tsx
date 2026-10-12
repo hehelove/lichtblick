@@ -26,10 +26,6 @@ import {
   Topic,
 } from "@lichtblick/suite";
 import { AppSetting } from "@lichtblick/suite-base/AppSetting";
-import {
-  MessagePipelineContext,
-  useMessagePipeline,
-} from "@lichtblick/suite-base/components/MessagePipeline";
 import { registerRecordableCanvas } from "@lichtblick/suite-base/components/PlaybackControls/videoExport/recordableCanvases";
 import { useAnalytics } from "@lichtblick/suite-base/context/AnalyticsContext";
 import { DEFAULT_SCENE_EXTENSION_CONFIG } from "@lichtblick/suite-base/panels/ThreeDeeRender/SceneExtensionConfig";
@@ -84,9 +80,6 @@ const TRANSFORM_TOPIC_SCHEMAS = new Set<string>([
 
 const log = Logger.getLogger(__filename);
 
-const selectGetMetadata = (ctx: MessagePipelineContext) => ctx.getMetadata;
-const selectHasActiveData = (ctx: MessagePipelineContext) => ctx.playerState.activeData != undefined;
-
 /**
  * A panel that renders a 3D scene. This is a thin wrapper around a `Renderer` instance.
  */
@@ -101,6 +94,7 @@ export function ThreeDeeRender(props: Readonly<ThreeDeeRenderProps>): React.JSX.
     logError,
     panelId,
     panelTitle,
+    getMetadata,
   } = props;
   const {
     initialState,
@@ -409,15 +403,16 @@ export function ThreeDeeRender(props: Readonly<ThreeDeeRenderProps>): React.JSX.
   }, [topics, renderer]);
 
   // Push rccg12 color-correction matrices from file metadata (MCAP-only) into the renderer.
-  // Metadata is not part of RenderState (a deferred player-API change), so it is read through
-  // the pipeline getter instead; the matrix reaches image decoding via the renderable settings.
-  // The getMetadata function identity is stable, so the memo is keyed on activeData presence:
-  // MCAP metadata lands during async player init, before the first activeData, which makes the
-  // false->true transition the point where the metadata first becomes readable.
+  // Metadata is not part of RenderState (a deferred player-API change), so the pipeline getter
+  // is threaded in as a prop from the adapter — this component runs inside createSyncRoot,
+  // a separate React root where the MessagePipeline context is NOT visible.
+  // The getMetadata prop identity is stable per player, so the memo is keyed on activeData
+  // presence: MCAP metadata lands during async player init, before the first activeData,
+  // which makes the false->true transition the point where the metadata first becomes
+  // readable. currentTime is set from renderState the same way and serves as that signal.
   // ponytail: applied when image renderables are created; a renderable that already exists
   // before a late metadata update picks the matrix up on its next setSettings.
-  const getMetadata = useMessagePipeline(selectGetMetadata);
-  const hasActiveData = useMessagePipeline(selectHasActiveData);
+  const hasActiveData = currentTime != undefined;
   const colorCorrections = useMemo(() => {
     const map = new Map<string, ReadonlyArray<number>>();
     for (const { topic, matrix } of parseColorCorrectionRecords(getMetadata())) {

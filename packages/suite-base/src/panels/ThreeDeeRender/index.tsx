@@ -15,6 +15,10 @@ import {
   ForwardAnalyticsContextProvider,
   useForwardAnalytics,
 } from "@lichtblick/suite-base/components/ForwardAnalyticsContextProvider";
+import {
+  MessagePipelineContext,
+  useMessagePipeline,
+} from "@lichtblick/suite-base/components/MessagePipeline";
 import Panel from "@lichtblick/suite-base/components/Panel";
 import PanelContext from "@lichtblick/suite-base/components/PanelContext";
 import {
@@ -29,6 +33,8 @@ import { SaveConfig } from "@lichtblick/suite-base/types/panels";
 import { ThreeDeeRender } from "./ThreeDeeRender";
 import { InitPanelArgs, InterfaceMode } from "./types";
 
+const selectGetMetadata = (ctx: MessagePipelineContext) => ctx.getMetadata;
+
 function initPanel(args: InitPanelArgs, context: BuiltinPanelExtensionContext) {
   const {
     crash,
@@ -41,6 +47,7 @@ function initPanel(args: InitPanelArgs, context: BuiltinPanelExtensionContext) {
     logError,
     panelId,
     panelTitle,
+    getMetadata,
   } = args;
   return createSyncRoot(
     <CaptureErrorBoundary onError={crash}>
@@ -55,6 +62,7 @@ function initPanel(args: InitPanelArgs, context: BuiltinPanelExtensionContext) {
           logError={logError}
           panelId={panelId}
           panelTitle={panelTitle}
+          getMetadata={getMetadata}
         />
       </ForwardAnalyticsContextProvider>
     </CaptureErrorBoundary>,
@@ -80,6 +88,8 @@ function ThreeDeeRenderAdapter(interfaceMode: InterfaceMode, props: Props) {
 
   const forwardedAnalytics = useForwardAnalytics();
   const { injectedFeatures } = useAppContext();
+  // 主树里读 pipeline（sync root 内不可见），经 initPanel 线程传给独立 root 的面板。
+  const getMetadata = useMessagePipeline(selectGetMetadata);
   const customSceneExtensions = useMemo(() => {
     if (injectedFeatures == undefined) {
       return undefined;
@@ -111,6 +121,7 @@ function ThreeDeeRenderAdapter(interfaceMode: InterfaceMode, props: Props) {
         logError: panelContext?.logError,
         panelId: panelContext?.id,
         panelTitle: panelContext?.title,
+        getMetadata,
       }),
     [
       crash,
@@ -124,6 +135,7 @@ function ThreeDeeRenderAdapter(interfaceMode: InterfaceMode, props: Props) {
       panelContext?.logError,
       panelContext?.id,
       panelContext?.title,
+      getMetadata,
     ],
   );
 
