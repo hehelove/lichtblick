@@ -92,6 +92,11 @@ export function CompareSourcesButton(): React.JSX.Element | null {
       });
       return;
     }
+    // T5 store 的 addFiles 会静默截断超量文件——追加路径在这里显式拒绝(镜像 T6 入口守卫)。
+    if (files.length > room) {
+      enqueueSnackbar(t("addFileRoom", { room }), { variant: "error" });
+      return;
+    }
     useCompareStore.getState().addFiles(files);
     rebuild();
   };

@@ -163,6 +163,25 @@ describe("CompareSourcesButton", () => {
     expect(useCompareStore.getState().slots).toHaveLength(2);
   });
 
+  it("Add file rejects an over-capacity pick without appending or rebuilding", async () => {
+    // 2 slots occupied → room for 1; picking 2 valid files must fail visibly, not truncate.
+    const { enqueueSnackbar } = await import("notistack");
+    const picks = [makeFile("c.mcap"), makeFile("d.bag")];
+    (showOpenFilePicker as jest.Mock).mockResolvedValue(
+      picks.map((file) => ({ getFile: async () => file })),
+    );
+    renderButton();
+    openPopover();
+    fireEvent.click(await screen.findByText("Add file…"));
+    await waitFor(() => {
+      expect(enqueueSnackbar).toHaveBeenCalledWith(expect.stringContaining("at most 1"), {
+        variant: "error",
+      });
+    });
+    expect(mockSelectSource).not.toHaveBeenCalled();
+    expect(useCompareStore.getState().slots.map((s) => s.fileName)).toEqual(["a.mcap", "b.bag"]);
+  });
+
   it("Add file is disabled when every slot letter is in use", async () => {
     useCompareStore.getState().addFiles([makeFile("c.mcap")]);
     renderButton();

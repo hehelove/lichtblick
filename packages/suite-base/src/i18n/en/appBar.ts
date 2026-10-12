@@ -8,6 +8,7 @@
 export const appBar = {
   about: "About",
   addFile: "Add file…",
+  addFileRoom: "Comparison supports at most {{room}} more file(s)",
   addPanel: "Add panel",
   compareFiles: "Compare files…",
   comparisonSources: "Comparison sources",
