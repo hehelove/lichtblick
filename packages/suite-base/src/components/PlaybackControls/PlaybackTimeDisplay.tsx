@@ -20,6 +20,7 @@ import {
   MessagePipelineContext,
   useMessagePipeline,
 } from "@lichtblick/suite-base/components/MessagePipeline";
+import { useIsComparisonSession } from "@lichtblick/suite-base/dataSources/compareStore";
 import { useAppTimeFormat } from "@lichtblick/suite-base/hooks";
 import { useAppConfigurationValue } from "@lichtblick/suite-base/hooks/useAppConfigurationValue";
 
@@ -43,10 +44,13 @@ export default function PlaybackTimeDisplay(props: Props): React.JSX.Element {
   const endTime = useMessagePipeline(selectEndTime);
   const currentTime = useMessagePipeline(selectCurrentTime);
   const appTimeFormat = useAppTimeFormat();
+  const isComparison = useIsComparisonSession();
 
   return (
     <UnconnectedPlaybackTimeDisplay
-      appTimeFormat={appTimeFormat}
+      // 流逝域锚点近 0,TOD 会显示 1970 墙钟——比较会话强制 SEC(spec §6)
+      appTimeFormat={isComparison ? { ...appTimeFormat, timeFormat: "SEC" } : appTimeFormat}
+      showFormatMenu={!isComparison}
       currentTime={currentTime}
       startTime={startTime}
       endTime={endTime}
