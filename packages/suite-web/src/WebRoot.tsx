@@ -11,6 +11,7 @@ import {
   AppBarProps,
   AppSetting,
   IExtensionLoader,
+  CompareFilesDataSourceFactory,
   FoxgloveWebSocketDataSourceFactory,
   IDataSourceFactory,
   IdbExtensionLoader,
@@ -77,6 +78,7 @@ export function WebRoot(props: {
       new UlogLocalDataSourceFactory(),
       new SampleNuscenesDataSourceFactory(),
       new McapLocalDataSourceFactory(),
+      new CompareFilesDataSourceFactory(),
       new RemoteDataSourceFactory(),
     ];
 

@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   App,
   AppSetting,
+  CompareFilesDataSourceFactory,
   FoxgloveWebSocketDataSourceFactory,
   IAppConfiguration,
   IDataSourceFactory,
@@ -98,6 +99,7 @@ export default function Root(props: RootProps): React.JSX.Element {
       new VelodyneDataSourceFactory(),
       new SampleNuscenesDataSourceFactory(),
       new McapLocalDataSourceFactory(),
+      new CompareFilesDataSourceFactory(),
       new RemoteDataSourceFactory(),
     ];
 
