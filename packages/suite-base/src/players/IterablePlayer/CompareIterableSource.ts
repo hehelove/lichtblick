@@ -9,11 +9,7 @@ import * as _ from "lodash-es";
 
 import { compare as compareTime, Time, toNanoSec } from "@lichtblick/rostime";
 import { MessageEvent, Metadata } from "@lichtblick/suite";
-import {
-  PlayerAlert,
-  TopicSelection,
-  TopicStats,
-} from "@lichtblick/suite-base/players/types";
+import { PlayerAlert, TopicSelection, TopicStats } from "@lichtblick/suite-base/players/types";
 import { RosDatatypes } from "@lichtblick/suite-base/types/RosDatatypes";
 
 import {
@@ -40,9 +36,7 @@ export type CompareIterableSourceOptions = {
 const SLOT_SUFFIX_RE = /^(.*)@([A-Z])$/;
 
 /** Splits a compare-namespaced topic (`/tf@A`) into its base name and slot letter. */
-export function slotOfTopic(
-  topic: string,
-): { baseName: string; slot: string } | undefined {
+export function slotOfTopic(topic: string): { baseName: string; slot: string } | undefined {
   const match = SLOT_SUFFIX_RE.exec(topic);
   if (match == undefined) {
     return undefined;
@@ -172,9 +166,7 @@ export class CompareIterableSource implements IDeserializedIterableSource {
     let end: Time | undefined;
     for (const slot of initialized) {
       const slotStart = nsToTime(slot.offsetNs);
-      const slotEnd = nsToTime(
-        toNanoSec(slot.init.end) - slot.anchorNs + slot.offsetNs,
-      );
+      const slotEnd = nsToTime(toNanoSec(slot.init.end) - slot.anchorNs + slot.offsetNs);
       if (start == undefined || compareTime(slotStart, start) < 0) {
         start = slotStart;
       }
@@ -289,10 +281,7 @@ export class CompareIterableSource implements IDeserializedIterableSource {
           if (head.current == undefined || head.mappedTime == undefined) {
             continue;
           }
-          if (
-            min == undefined ||
-            compareTime(head.mappedTime, min.mappedTime!) < 0
-          ) {
+          if (min == undefined || compareTime(head.mappedTime, min.mappedTime!) < 0) {
             min = head; // 严格小于:平局时保住先入者(槽位字母序)
           }
         }
@@ -325,9 +314,7 @@ export class CompareIterableSource implements IDeserializedIterableSource {
     }
   }
 
-  public async getBackfillMessages(
-    args: GetBackfillMessagesArgs,
-  ): Promise<MessageEvent[]> {
+  public async getBackfillMessages(args: GetBackfillMessagesArgs): Promise<MessageEvent[]> {
     const perSlotTopics = this.#partitionTopics(args.topics);
 
     // 记录 slotIndex,平局时按槽位序排序:Promise.all 的完成顺序不确定,

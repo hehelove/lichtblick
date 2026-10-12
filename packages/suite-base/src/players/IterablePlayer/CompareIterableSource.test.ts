@@ -11,11 +11,7 @@ import { compare, Time } from "@lichtblick/rostime";
 import { SubscribePayload } from "@lichtblick/suite-base/players/types";
 
 import { CompareIterableSource } from "./CompareIterableSource";
-import {
-  IDeserializedIterableSource,
-  Initialization,
-  IteratorResult,
-} from "./IIterableSource";
+import { IDeserializedIterableSource, Initialization, IteratorResult } from "./IIterableSource";
 
 function fakeInit(overrides: Partial<Initialization> = {}): Initialization {
   return {
@@ -57,10 +53,7 @@ function makeFakeSource(
         if (!args.topics.has(msg.topic)) {
           continue;
         }
-        if (
-          args.start != undefined &&
-          compare(msg.receiveTime, args.start) < 0
-        ) {
+        if (args.start != undefined && compare(msg.receiveTime, args.start) < 0) {
           continue;
         }
         if (args.end != undefined && compare(msg.receiveTime, args.end) > 0) {
@@ -128,14 +121,8 @@ describe("CompareIterableSource.initialize", () => {
     expect(init.topics.map((t) => t.name).sort()).toEqual(["/tf@A", "/tf@B"]);
     expect([...init.topicStats.keys()].sort()).toEqual(["/tf@A", "/tf@B"]);
     // publishersByTopic 同样加槽位后缀;metadata 加槽位前缀;schemaName 不受命名空间影响
-    expect([...init.publishersByTopic.keys()].sort()).toEqual([
-      "/tf@A",
-      "/tf@B",
-    ]);
-    expect(init.metadata?.map((m) => m.name).sort()).toEqual([
-      "[A] session-1",
-      "[B] session-1",
-    ]);
+    expect([...init.publishersByTopic.keys()].sort()).toEqual(["/tf@A", "/tf@B"]);
+    expect(init.metadata?.map((m) => m.name).sort()).toEqual(["[A] session-1", "[B] session-1"]);
     expect(init.topics.map((t) => t.schemaName)).toEqual([
       "tf2_msgs/TFMessage",
       "tf2_msgs/TFMessage",
@@ -183,9 +170,7 @@ describe("CompareIterableSource.initialize", () => {
     const warn = init.alerts.find((a) => a.severity === "warn");
     expect(warn?.message).toContain("tf2_msgs/TFMessage");
     // 首源优先
-    expect(
-      init.datatypes.get("tf2_msgs/TFMessage")?.definitions[0]?.name,
-    ).toEqual("x");
+    expect(init.datatypes.get("tf2_msgs/TFMessage")?.definitions[0]?.name).toEqual("x");
   });
 
   it("keeps the first profile and warns when children disagree", async () => {
@@ -195,9 +180,7 @@ describe("CompareIterableSource.initialize", () => {
     ]);
     const init = await source.initialize();
     expect(init.profile).toEqual("ros2");
-    expect(init.alerts.some((a) => a.message.includes("profile"))).toEqual(
-      true,
-    );
+    expect(init.alerts.some((a) => a.message.includes("profile"))).toEqual(true);
   });
 
   it("appends child alerts after comparison-generated alerts", async () => {
@@ -334,9 +317,7 @@ describe("CompareIterableSource.messageIterator / getBackfillMessages", () => {
     const results = await collect(source, ["/tf@A", "/tf@B"]);
     expect(
       results.map((r) =>
-        r.type === "message-event"
-          ? `${r.msgEvent.topic}@${r.msgEvent.receiveTime.sec}`
-          : "?",
+        r.type === "message-event" ? `${r.msgEvent.topic}@${r.msgEvent.receiveTime.sec}` : "?",
       ),
     ).toEqual(["/tf@A@0", "/tf@B@1", "/tf@A@2", "/tf@B@3", "/tf@A@4"]);
   });
@@ -418,9 +399,7 @@ describe("CompareIterableSource.messageIterator / getBackfillMessages", () => {
   it("passes through alerts without stalling the merge", async () => {
     const seenConsumptionTypes: (string | undefined)[] = [];
     const child: IDeserializedIterableSource = {
-      ...makeFakeSource(fakeInit(), [
-        { topic: "/tf", receiveTime: { sec: 100, nsec: 0 } },
-      ]),
+      ...makeFakeSource(fakeInit(), [{ topic: "/tf", receiveTime: { sec: 100, nsec: 0 } }]),
       async *messageIterator(args) {
         seenConsumptionTypes.push(args.consumptionType);
         yield {
