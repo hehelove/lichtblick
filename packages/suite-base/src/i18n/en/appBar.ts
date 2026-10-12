@@ -8,6 +8,7 @@
 export const appBar = {
   about: "About",
   addPanel: "Add panel",
+  compareFiles: "Compare files…",
   documentation: "Documentation",
   exploreSampleData: "Explore sample data",
   exportLayoutToFile: "Export layout to file…",

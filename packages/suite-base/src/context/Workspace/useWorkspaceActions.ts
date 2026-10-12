@@ -25,6 +25,7 @@ import {
   WorkspaceContext,
   WorkspaceContextStore,
 } from "./WorkspaceContext";
+import { useOpenCompareFiles } from "./useOpenCompareFiles";
 import { useOpenFile } from "./useOpenFile";
 
 export type WorkspaceActions = {
@@ -33,6 +34,9 @@ export type WorkspaceActions = {
       close: () => void;
       open: () => void;
       toggle: () => void;
+    };
+    compareFiles: {
+      open: () => Promise<void>;
     };
     dataSource: {
       close: () => void;
@@ -97,6 +101,7 @@ export function useWorkspaceActions(): WorkspaceActions {
   const { availableSources } = usePlayerSelection();
 
   const openFile = useOpenFile(availableSources);
+  const openCompareFiles = useOpenCompareFiles();
 
   const set = useCallback(
     (setter: (draft: Draft<WorkspaceContextStore>) => void) => {
@@ -124,6 +129,10 @@ export function useWorkspaceActions(): WorkspaceActions {
               draft.dialogs.commandPalette.open = !draft.dialogs.commandPalette.open;
             });
           },
+        },
+
+        compareFiles: {
+          open: openCompareFiles,
         },
 
         dataSource: {
@@ -291,5 +300,5 @@ export function useWorkspaceActions(): WorkspaceActions {
         },
       },
     };
-  }, [openFile, set]);
+  }, [openCompareFiles, openFile, set]);
 }

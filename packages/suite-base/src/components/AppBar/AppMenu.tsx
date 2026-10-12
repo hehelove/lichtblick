@@ -97,6 +97,18 @@ export function AppMenu(props: AppMenuProps): React.JSX.Element {
       },
       {
         type: "item",
+        label: t("compareFiles"),
+        key: "compare-files",
+        dataTestId: "menu-item-compare-files",
+        onClick: () => {
+          handleNestedMenuClose();
+          void dialogActions.compareFiles.open().catch((err: unknown) => {
+            console.error(err);
+          });
+        },
+      },
+      {
+        type: "item",
         label: t("openConnection"),
         key: "open-connection",
         shortcut: formatKeyboardShortcut("O", ["Meta", "Shift"]),
@@ -125,6 +137,7 @@ export function AppMenu(props: AppMenuProps): React.JSX.Element {
     return items;
   }, [
     classes.truncate,
+    dialogActions.compareFiles,
     dialogActions.dataSource,
     dialogActions.openFile,
     handleNestedMenuClose,
