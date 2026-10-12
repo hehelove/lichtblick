@@ -141,6 +141,12 @@ export function App(props: AppProps): React.JSX.Element {
     };
   }, [appConfiguration]);
 
+  // 渲染期同步注入：子组件 effect 先于本组件 effect 执行，首同步必须已带上 PAT。
+  const layoutSyncToken = appConfiguration.get(AppSetting.LAYOUT_SYNC_API_TOKEN);
+  HttpService.setAuthToken(
+    typeof layoutSyncToken === "string" && layoutSyncToken.length > 0 ? layoutSyncToken : undefined,
+  );
+
   const remoteLayoutStorage = useMemo(() => {
     if (workspace && APP_CONFIG.apiUrl) {
       return new LayoutsAPI(workspace);
