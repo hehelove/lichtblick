@@ -9,10 +9,15 @@ import { Fragment, Suspense, useEffect, useMemo } from "react";
 import { DndProvider } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
 
+import { AppSetting } from "@lichtblick/suite-base/AppSetting";
 import { IdbLayoutStorage } from "@lichtblick/suite-base/IdbLayoutStorage";
+import { LayoutsAPI } from "@lichtblick/suite-base/api/layouts/LayoutsAPI";
+import { resolveLayoutSyncWorkspace } from "@lichtblick/suite-base/api/layouts/workspace";
 import GlobalCss from "@lichtblick/suite-base/components/GlobalCss";
+import { APP_CONFIG } from "@lichtblick/suite-base/constants/config";
 import { AppParametersInput } from "@lichtblick/suite-base/context/AppParametersContext";
 import LayoutStorageContext from "@lichtblick/suite-base/context/LayoutStorageContext";
+import { RemoteLayoutStorageContext } from "@lichtblick/suite-base/context/RemoteLayoutStorageContext";
 import { UserScriptStateProvider } from "@lichtblick/suite-base/context/UserScriptStateContext";
 import AlertsContextProvider from "@lichtblick/suite-base/providers/AlertsContextProvider";
 import AppParametersProvider from "@lichtblick/suite-base/providers/AppParametersProvider";
@@ -22,6 +27,7 @@ import { StudioLogsSettingsProvider } from "@lichtblick/suite-base/providers/Stu
 import TimelineInteractionStateProvider from "@lichtblick/suite-base/providers/TimelineInteractionStateProvider";
 import UserProfileLocalStorageProvider from "@lichtblick/suite-base/providers/UserProfileLocalStorageProvider";
 import { LayoutLoader } from "@lichtblick/suite-base/services/ILayoutLoader";
+import HttpService from "@lichtblick/suite-base/services/http/HttpService";
 
 import Workspace from "./Workspace";
 import { CustomWindowControlsProps } from "./components/AppBar/CustomWindowControls";
@@ -119,6 +125,32 @@ export function App(props: AppProps): React.JSX.Element {
   // The toast and logs provider comes first so they are available to all downstream providers
   providers.unshift(<StudioToastProvider />);
   providers.unshift(<StudioLogsSettingsProvider />);
+
+  const url = new URL(window.location.href);
+  const workspace = resolveLayoutSyncWorkspace(url.searchParams.get("workspace"), appConfiguration);
+
+  // PAT Bearer 注入（desktop）：设置面板改动即时生效（监听配置变化），无需重启。
+  useEffect(() => {
+    const applyToken = (value: string | number | boolean | undefined): void => {
+      HttpService.setAuthToken(typeof value === "string" && value.length > 0 ? value : undefined);
+    };
+    applyToken(appConfiguration.get(AppSetting.LAYOUT_SYNC_API_TOKEN));
+    appConfiguration.addChangeListener(AppSetting.LAYOUT_SYNC_API_TOKEN, applyToken);
+    return () => {
+      appConfiguration.removeChangeListener(AppSetting.LAYOUT_SYNC_API_TOKEN, applyToken);
+    };
+  }, [appConfiguration]);
+
+  const remoteLayoutStorage = useMemo(() => {
+    if (workspace && APP_CONFIG.apiUrl) {
+      return new LayoutsAPI(workspace);
+    }
+    return undefined;
+  }, [workspace]);
+
+  if (remoteLayoutStorage) {
+    providers.unshift(<RemoteLayoutStorageContext.Provider value={remoteLayoutStorage} />);
+  }
 
   if (extraProviders) {
     // Providers supplying context consumed by providers above them in this list must stay outermost,
