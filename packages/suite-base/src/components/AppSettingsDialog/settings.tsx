@@ -561,3 +561,32 @@ export function LanguageSettings(): React.ReactElement {
     </Stack>
   );
 }
+
+export function LayoutSyncSettings(): React.ReactElement {
+  const [workspace = "", setWorkspace] = useAppConfigurationValue<string>(
+    AppSetting.LAYOUT_SYNC_WORKSPACE,
+  );
+  const [token = "", setToken] = useAppConfigurationValue<string>(AppSetting.LAYOUT_SYNC_API_TOKEN);
+
+  return (
+    <Stack gap={1}>
+      <TextField
+        fullWidth
+        label="Layout sync workspace"
+        placeholder="default"
+        value={workspace}
+        onChange={(event) => void setWorkspace(event.target.value)}
+      />
+      <TextField
+        fullWidth
+        label="Layout sync API token (PAT)"
+        placeholder="xs_pat_…"
+        value={token}
+        onChange={(event) => void setToken(event.target.value)}
+      />
+      <Typography variant="inherit" color="text.secondary">
+        Workspace applies after restart; the token applies immediately.
+      </Typography>
+    </Stack>
+  );
+}

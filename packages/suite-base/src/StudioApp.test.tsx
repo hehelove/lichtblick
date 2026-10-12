@@ -8,6 +8,7 @@ import "@testing-library/jest-dom";
 
 import { IdbLayoutStorage } from "@lichtblick/suite-base/IdbLayoutStorage";
 import { LayoutsAPI } from "@lichtblick/suite-base/api/layouts/LayoutsAPI";
+import AppConfigurationContext from "@lichtblick/suite-base/context/AppConfigurationContext";
 import { SharedRootContext } from "@lichtblick/suite-base/context/SharedRootContext";
 
 import { StudioApp } from "./StudioApp";
@@ -120,11 +121,20 @@ describe("StudioApp", () => {
     AppBarComponent: undefined,
   };
 
+  const mockAppConfiguration = {
+    get: jest.fn().mockReturnValue(undefined),
+    set: jest.fn().mockResolvedValue(undefined),
+    addChangeListener: jest.fn(),
+    removeChangeListener: jest.fn(),
+  };
+
   const renderWithContext = (contextValue: any = mockSharedRootContext) => {
     return render(
-      <SharedRootContext.Provider value={contextValue}>
-        <StudioApp />
-      </SharedRootContext.Provider>,
+      <AppConfigurationContext.Provider value={mockAppConfiguration as any}>
+        <SharedRootContext.Provider value={contextValue}>
+          <StudioApp />
+        </SharedRootContext.Provider>
+      </AppConfigurationContext.Provider>,
     );
   };
 
