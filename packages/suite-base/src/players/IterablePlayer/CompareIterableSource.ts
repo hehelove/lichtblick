@@ -7,13 +7,7 @@
 
 import * as _ from "lodash-es";
 
-import {
-  add as addTime,
-  compare as compareTime,
-  fromNanoSec,
-  subtract as subtractTime,
-  Time,
-} from "@lichtblick/rostime";
+import { compare as compareTime, Time, toNanoSec } from "@lichtblick/rostime";
 import { MessageEvent, Metadata } from "@lichtblick/suite";
 import { PlayerAlert, TopicStats } from "@lichtblick/suite-base/players/types";
 import { RosDatatypes } from "@lichtblick/suite-base/types/RosDatatypes";
@@ -52,13 +46,25 @@ export function slotOfTopic(
   return { baseName: match[1]!, slot: match[2]! };
 }
 
-// Task 4 的 messageIterator 需要每个槽位的 anchor/offsetTime;届时再提升为实例字段
-// (现在提升会因只写不读触发 TS6133)。
+const NS_PER_SEC = 1_000_000_000n;
+
+/** Converts signed nanoseconds to a normalized Time (nsec always in [0, 1e9), sign carried by sec). */
+function nsToTime(ns: bigint): Time {
+  const sec = ns / NS_PER_SEC;
+  const rem = ns % NS_PER_SEC;
+  if (ns < 0n && rem !== 0n) {
+    return { sec: Number(sec - 1n), nsec: Number(NS_PER_SEC + rem) };
+  }
+  return { sec: Number(sec), nsec: Number(rem) };
+}
+
+// Task 4 的 messageIterator 复用 nsToTime 与这里的 anchorNs/offsetNs 做消息时间映射;
+// 届时再提升为实例字段(现在提升会因只写不读触发 TS6133)。
 type InitializedSlot = {
   input: CompareSlotInput;
   init: Initialization;
-  anchor: Time; // 子源录制起点
-  offsetTime: Time; // 用户偏移
+  anchorNs: bigint; // 子源录制起点(ns)
+  offsetNs: bigint; // 用户偏移(ns)
 };
 
 /**
@@ -95,8 +101,8 @@ export class CompareIterableSource implements IDeserializedIterableSource {
     const initialized: InitializedSlot[] = results.map(({ input, init }) => ({
       input,
       init,
-      anchor: init.start,
-      offsetTime: fromNanoSec(this.#options.offsets.get(input.slot) ?? 0n),
+      anchorNs: toNanoSec(init.start),
+      offsetNs: this.#options.offsets.get(input.slot) ?? 0n,
     }));
 
     const topics: TopicWithDecodingInfo[] = [];
@@ -146,10 +152,9 @@ export class CompareIterableSource implements IDeserializedIterableSource {
     let start: Time | undefined;
     let end: Time | undefined;
     for (const slot of initialized) {
-      const slotStart = slot.offsetTime;
-      const slotEnd = addTime(
-        subtractTime(slot.init.end, slot.anchor),
-        slot.offsetTime,
+      const slotStart = nsToTime(slot.offsetNs);
+      const slotEnd = nsToTime(
+        toNanoSec(slot.init.end) - slot.anchorNs + slot.offsetNs,
       );
       if (start == undefined || compareTime(slotStart, start) < 0) {
         start = slotStart;

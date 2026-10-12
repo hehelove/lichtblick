@@ -157,4 +157,33 @@ describe("CompareIterableSource.initialize", () => {
     // rostime compare 返回未归一化的差值(secDiff),只断言符号
     expect(compare(init.start, init.end)).toBeLessThan(0); // start < end,不倒置
   });
+
+  it("survives offsets beyond a child's duration without throwing (negative re-anchor)", async () => {
+    // A: child [100,200] (duration 100s), offset -300s → slot range [-300, -200]
+    // B: child [100,300], offset 0 → slot range [0, 200]
+    const source = makeSource(
+      [
+        { slot: "A", fileName: "a.mcap", init: fakeInit() },
+        {
+          slot: "B",
+          fileName: "b.mcap",
+          init: fakeInit({ end: { sec: 300, nsec: 0 } }),
+        },
+      ],
+      new Map([["A", -300_000_000_000n]]),
+    );
+    const init = await source.initialize();
+    expect(init.start).toEqual({ sec: -300, nsec: 0 });
+    expect(init.end).toEqual({ sec: 200, nsec: 0 });
+  });
+
+  it("normalizes fractional negative offsets to valid Time (negative nsec never escapes)", async () => {
+    const source = makeSource(
+      [{ slot: "A", fileName: "a.mcap", init: fakeInit() }],
+      new Map([["A", -300_500_000_000n]]), // -300.5s
+    );
+    const init = await source.initialize();
+    expect(init.start).toEqual({ sec: -301, nsec: 500_000_000 }); // -300.5s normalized
+    expect(init.start.nsec).toBeGreaterThanOrEqual(0);
+  });
 });
