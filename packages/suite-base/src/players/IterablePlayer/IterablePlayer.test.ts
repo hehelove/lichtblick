@@ -1604,4 +1604,43 @@ describe("IterablePlayer", () => {
       });
     });
   });
+
+  describe("playerId option", () => {
+    it("emits the injected playerId instead of a generated uuid", async () => {
+      const source = new TestSource();
+      const player = new IterablePlayer({
+        source,
+        name: "test",
+        sourceId: "test",
+        playerId: "compare-stable-id",
+      });
+      const states: PlayerState[] = [];
+      const firstState = new Promise<void>((resolve) => {
+        player.setListener(async (state) => {
+          states.push(state);
+          resolve();
+        });
+      });
+      player.startPlayback();
+      await firstState;
+      expect(states[0]?.playerId).toEqual("compare-stable-id");
+      player.close();
+    });
+
+    it("generates a playerId when none is injected", async () => {
+      const source = new TestSource();
+      const player = new IterablePlayer({ source, name: "test", sourceId: "test" });
+      const states: PlayerState[] = [];
+      const firstState = new Promise<void>((resolve) => {
+        player.setListener(async (state) => {
+          states.push(state);
+          resolve();
+        });
+      });
+      player.startPlayback();
+      await firstState;
+      expect(states[0]?.playerId).toBeTruthy();
+      player.close();
+    });
+  });
 });

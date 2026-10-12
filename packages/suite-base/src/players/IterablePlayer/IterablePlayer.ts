@@ -123,6 +123,9 @@ type IterablePlayerOptions = {
   // Max. time that messages will be buffered ahead for smoother playback. (default: 10sec)
   readAheadDuration?: Time;
 
+  // Optional stable player id. When omitted a random uuid is generated.
+  playerId?: string;
+
   // Optional hook to expand the seek backfill (e.g. replay a video GOP). No-op when omitted,
   // keeping the player free of codec-specific knowledge.
   expandBackfill?: ExpandBackfill;
@@ -178,7 +181,7 @@ export class IterablePlayer implements Player {
   #preloadTopics: TopicSelection = new Map();
 
   #progress: Progress = {};
-  #id: string = uuidv4();
+  #id: string;
   #messages: Immutable<MessageEvent[]> = [];
   #receivedBytes: number = 0;
   #hasError = false;
@@ -235,8 +238,10 @@ export class IterablePlayer implements Player {
       sourceId,
       readAheadDuration = { sec: 10, nsec: 0 },
       expandBackfill,
+      playerId,
     } = options;
 
+    this.#id = playerId ?? uuidv4();
     this.#iterableSource = source;
     if (source.sourceType === "deserialized") {
       this.#bufferImpl = new BufferedIterableSource(source);
