@@ -20,9 +20,13 @@ jest.mock("@lichtblick/suite-base/context/PlayerSelectionContext", () => ({
 }));
 
 // The comparison-session gate agrees with the store flag only when the player name matches.
+// Tests retarget mockPlayerName and rerender to simulate player swaps — including the undefined
+// "blink" a same-session rebuild emits between tearing one player down and starting the next.
+let mockPlayerName: string | undefined = "Comparison: a.mcap, b.bag";
+
 jest.mock("@lichtblick/suite-base/components/MessagePipeline", () => ({
   useMessagePipeline: (sel: (ctx: unknown) => unknown) =>
-    sel({ playerState: { name: "Comparison: a.mcap, b.bag" } }),
+    sel({ playerState: { name: mockPlayerName } }),
 }));
 
 jest.mock("@lichtblick/suite-base/util/showOpenFilePicker", () => jest.fn());
@@ -52,9 +56,18 @@ function openPopover(): void {
   fireEvent.click(screen.getByTestId("CompareSourcesButton"));
 }
 
+function rerenderButton(root: ReturnType<typeof render>): void {
+  root.rerender(
+    <ThemeProvider isDark>
+      <CompareSourcesButton />
+    </ThemeProvider>,
+  );
+}
+
 describe("CompareSourcesButton", () => {
   beforeEach(() => {
     mockSelectSource.mockReset();
+    mockPlayerName = "Comparison: a.mcap, b.bag";
     (usePlayerSelection as jest.Mock).mockReturnValue({ selectSource: mockSelectSource });
     useCompareStore.getState().endSession();
     useCompareStore.getState().sessionFor([makeFile("a.mcap"), makeFile("b.bag")]);
@@ -72,6 +85,10 @@ describe("CompareSourcesButton", () => {
     expect(await screen.findByText("a.mcap")).toBeTruthy();
     expect(screen.getByText("b.bag")).toBeTruthy();
     expect(screen.getByLabelText("Offset A (s)")).toHaveValue("0");
+    const trigger = screen.getByTestId("CompareSourcesButton");
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    expect(trigger).toHaveAttribute("aria-controls", "comparison-sources-popover");
+    expect(trigger).toHaveAttribute("aria-haspopup", "dialog");
   });
 
   it("commits a valid offset by rebuilding the player with the same files", async () => {
@@ -145,6 +162,42 @@ describe("CompareSourcesButton", () => {
     });
     // The row keyed "B" is reused; its offset input must show c.mcap's 0s, not b.bag's stale 1.5s.
     expect(screen.getByLabelText("Offset B (s)")).toHaveValue("0");
+  });
+
+  it("closes an open popover when a non-comparison source takes over, and it stays closed", () => {
+    const root = renderButton();
+    openPopover();
+    expect(screen.getByText("a.mcap")).toBeTruthy();
+    expect(screen.getByTestId("CompareSourcesButton")).toHaveAttribute("aria-expanded", "true");
+
+    // Open a different file normally while the popover is open — the name changes for real.
+    mockPlayerName = "normal.mcap";
+    rerenderButton(root);
+    expect(screen.queryByTestId("CompareSourcesButton")).toBeNull(); // session over, badge hidden
+    expect(screen.queryByText("Add file…")).toBeNull();
+
+    // Start a NEW comparison session: the badge returns, but the ghost popover must not.
+    // (aria-expanded follows the AppBar sibling pattern: present only while open.)
+    mockPlayerName = "Comparison: c.mcap";
+    rerenderButton(root);
+    expect(screen.getByTestId("CompareSourcesButton")).not.toHaveAttribute("aria-expanded");
+    expect(screen.queryByText("a.mcap")).toBeNull(); // rows would render if the anchor survived
+  });
+
+  it("keeps the popover open across a same-session rebuild's undefined name blink", () => {
+    const root = renderButton();
+    openPopover();
+    expect(screen.getByText("a.mcap")).toBeTruthy();
+
+    // Offset/slot commits rebuild the player: defaultPlayerState() blinks name to undefined
+    // between the old and new player — that must NOT close the popover.
+    mockPlayerName = undefined;
+    rerenderButton(root);
+    mockPlayerName = "Comparison: a.mcap, b.bag";
+    rerenderButton(root);
+
+    expect(screen.getByText("a.mcap")).toBeTruthy(); // popover still open
+    expect(screen.getByTestId("CompareSourcesButton")).toHaveAttribute("aria-expanded", "true");
   });
 
   it("Add file rejects unsupported extensions with a snackbar naming the file", async () => {

@@ -5,11 +5,12 @@ import { ColumnSingleCompare20Filled } from "@fluentui/react-icons";
 import { Divider, IconButton, Popover, Stack, TextField, Typography } from "@mui/material";
 import { enqueueSnackbar } from "notistack";
 import path from "path";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { makeStyles } from "tss-react/mui";
 
 import { AppBarIconButton } from "@lichtblick/suite-base/components/AppBar/AppBarIconButton";
+import { useMessagePipeline } from "@lichtblick/suite-base/components/MessagePipeline";
 import TextMiddleTruncate from "@lichtblick/suite-base/components/TextMiddleTruncate";
 import { usePlayerSelection } from "@lichtblick/suite-base/context/PlayerSelectionContext";
 import { FILE_ACCEPT_TYPE } from "@lichtblick/suite-base/context/Workspace/constants";
@@ -51,7 +52,22 @@ export function CompareSourcesButton(): React.JSX.Element | null {
   const isComparison = useIsComparisonSession();
   const slots = useCompareStore((state) => state.slots);
   const { selectSource } = usePlayerSelection();
+  const playerName = useMessagePipeline((ctx) => ctx.playerState.name);
+  const prevName = useRef<string | undefined>(undefined);
   const [anchorEl, setAnchorEl] = useState<HTMLElement>();
+
+  // 幽灵 popover 修复:会话结束(anchorEl 残留)后新会话会把 popover 锚到已脱离的节点上。
+  // 不能用 isComparison 变 false 来关——每次 offset/槽位提交都会重建 player,pipeline 先派发
+  // defaultPlayerState()(name 为 undefined)再回到比较名,name 会闪烁一次,那样会误关。
+  // 只认两类"真换源":非比较名称的真实源接管;或 name 连续两次为空(会话真正结束)。
+  useEffect(() => {
+    const differentSource = playerName != undefined && !playerName.startsWith("Comparison: ");
+    const sessionEnded = playerName == undefined && prevName.current == undefined;
+    if (differentSource || sessionEnded) {
+      setAnchorEl(undefined);
+    }
+    prevName.current = playerName;
+  }, [playerName]);
 
   if (!isComparison) {
     return null;
@@ -87,9 +103,10 @@ export function CompareSourcesButton(): React.JSX.Element | null {
       (file) => !COMPARE_EXTENSIONS.includes(path.extname(file.name).toLowerCase()),
     );
     if (unsupported.length > 0) {
-      enqueueSnackbar(`Comparison does not support: ${unsupported.map((f) => f.name).join(", ")}`, {
-        variant: "error",
-      });
+      enqueueSnackbar(
+        t("comparisonUnsupported", { files: unsupported.map((f) => f.name).join(", ") }),
+        { variant: "error" },
+      );
       return;
     }
     // T5 store 的 addFiles 会静默截断超量文件——追加路径在这里显式拒绝(镜像 T6 入口守卫)。
@@ -101,12 +118,17 @@ export function CompareSourcesButton(): React.JSX.Element | null {
     rebuild();
   };
 
+  const popoverOpen = anchorEl != undefined;
+
   return (
     <>
       <AppBarIconButton
         color="inherit"
         title={t("comparisonSources")}
         aria-label={t("comparisonSources")}
+        aria-haspopup="dialog"
+        aria-expanded={popoverOpen ? "true" : undefined}
+        aria-controls={popoverOpen ? "comparison-sources-popover" : undefined}
         data-testid="CompareSourcesButton"
         onClick={(event) => {
           setAnchorEl(event.currentTarget);
@@ -115,7 +137,8 @@ export function CompareSourcesButton(): React.JSX.Element | null {
         <ColumnSingleCompare20Filled />
       </AppBarIconButton>
       <Popover
-        open={anchorEl != undefined}
+        id={popoverOpen ? "comparison-sources-popover" : undefined}
+        open={popoverOpen}
         anchorEl={anchorEl}
         onClose={() => {
           setAnchorEl(undefined);

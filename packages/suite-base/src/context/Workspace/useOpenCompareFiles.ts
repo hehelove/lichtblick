@@ -4,6 +4,7 @@
 import { enqueueSnackbar } from "notistack";
 import path from "path";
 import { useCallback, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 
 import { usePlayerSelection } from "@lichtblick/suite-base/context/PlayerSelectionContext";
 import { FILE_ACCEPT_TYPE } from "@lichtblick/suite-base/context/Workspace/constants";
@@ -22,6 +23,7 @@ import showOpenFilePicker from "@lichtblick/suite-base/util/showOpenFilePicker";
  */
 export function useOpenCompareFiles(): () => Promise<void> {
   const { selectSource } = usePlayerSelection();
+  const { t } = useTranslation("appBar");
 
   const extensions = useMemo(() => normalizeExtensions(COMPARE_EXTENSIONS), []);
 
@@ -41,7 +43,7 @@ export function useOpenCompareFiles(): () => Promise<void> {
     const files = await Promise.all(handles.map(async (handle) => await handle.getFile()));
 
     if (files.length > SLOT_LETTERS.length) {
-      enqueueSnackbar(`Comparison supports at most ${SLOT_LETTERS.length} files`, {
+      enqueueSnackbar(t("compareMaxFiles", { count: SLOT_LETTERS.length }), {
         variant: "error",
       });
       return;
@@ -51,12 +53,12 @@ export function useOpenCompareFiles(): () => Promise<void> {
     );
     if (unsupported.length > 0) {
       enqueueSnackbar(
-        `Comparison does not support: ${unsupported.map((file) => file.name).join(", ")}`,
+        t("comparisonUnsupported", { files: unsupported.map((file) => file.name).join(", ") }),
         { variant: "error" },
       );
       return;
     }
 
     selectSource(COMPARE_SOURCE_ID, { type: "file", files });
-  }, [extensions, selectSource]);
+  }, [extensions, selectSource, t]);
 }
