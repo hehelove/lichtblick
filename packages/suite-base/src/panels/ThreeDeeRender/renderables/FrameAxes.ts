@@ -37,6 +37,16 @@ export type LayerSettingsTransform = BaseSettings & {
   rpyCoefficient: Readonly<[number | undefined, number | undefined, number | undefined]>;
 };
 
+// xs 扩展的「动画辅助帧」前缀（如 obstf/<topic>/<track_id>，障碍物平滑插值的 TF 载体，
+// 见 xs_visualizer_fox_ext 的 /ObstacleTf）。这类帧只用于让 3D 面板对实体位置做帧间
+// 插值，不参与可视化：不创建坐标轴/标签/父连线渲染对象，也不进帧下拉列表
+// （Renderer.#refreshCoordinateFrameList 同步过滤）。前缀契约由扩展与 fork 两侧共同维护。
+const ANIMATION_FRAME_PREFIXES = ["obstf/"];
+
+export function isAnimationFrameId(frameId: string): boolean {
+  return ANIMATION_FRAME_PREFIXES.some((prefix) => frameId.startsWith(prefix));
+}
+
 const PICKING_LINE_SIZE = 6;
 const PI_2 = Math.PI / 2;
 
@@ -461,6 +471,10 @@ export class FrameAxes extends SceneExtension<FrameAxisRenderable> {
 
   #handleTransformTreeUpdated = (): void => {
     for (const frameId of this.renderer.transformTree.frames().keys()) {
+      // 动画辅助帧（obstf/...）不建渲染对象：避免每个障碍物挂坐标轴/标签/父连线
+      if (isAnimationFrameId(frameId)) {
+        continue;
+      }
       this.#addFrameAxis(frameId);
     }
     const config = this.renderer.config;
