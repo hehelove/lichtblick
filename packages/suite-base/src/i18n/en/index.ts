@@ -7,7 +7,9 @@
 
 export * from "./addPanel";
 export * from "./appBar";
+export * from "./audio";
 export * from "./appSettings";
+export * from "./commandPalette";
 export * from "./dataSourceInfo";
 export * from "./desktopWindow";
 export * from "./extensionsSettings";
@@ -16,6 +18,7 @@ export * from "./general";
 export * from "./httpErrors";
 export * from "./incompatibleLayoutVersion";
 export * from "./log";
+export * from "./map";
 export * from "./openDialog";
 export * from "./panelConfigVersionGuard";
 export * from "./panels";
@@ -27,4 +30,5 @@ export * from "./settingsEditor";
 export * from "./stateTransitions";
 export * from "./threeDee";
 export * from "./topicList";
+export * from "./videoExport";
 export * from "./workspace";

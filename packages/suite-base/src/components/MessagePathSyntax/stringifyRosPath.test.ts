@@ -23,6 +23,11 @@ describe("stringifyRosPath", () => {
     "/topic.foo[1:].bar",
     "/topic.foo[:10].bar",
     "/topic.foo[:].bar",
+    "/topic.field.@length",
+    "/topic.foo.@mul(1e-9)",
+    "/topic.foo.@add(-2.5)",
+    "/topic.foo.@add(3)",
+    "/topic.foo.@add($speed)",
     "/topic.foo[$a].bar",
     "/topic.foo[$a:$b].bar",
     "/topic.foo[$a:5].bar",
@@ -40,9 +45,11 @@ describe("stringifyRosPath", () => {
     { path: "/topic.foo[$num1:$num2].bar", expected: "/topic.foo[1:2].bar" },
     { path: "/topic.foo{bar==$num1}.baz", expected: "/topic.foo{bar==1}.baz" },
     { path: "/topic.foo{bar==$str}.baz", expected: '/topic.foo{bar=="foo"}.baz' },
+    // Operand repr keeps the user's spelling even after the variable is filled in.
+    { path: "/topic.foo.@mul($scale)", expected: "/topic.foo.@mul($scale)" },
   ])("turns $path with variables into $expected", ({ path, expected }) => {
     // note: only string and number are currently supported by fillInGlobalVariablesInPath
-    const globalVariables = { str: "foo", num1: 1, num2: 2 };
+    const globalVariables = { str: "foo", num1: 1, num2: 2, scale: 2 };
     expect(
       stringifyMessagePath(fillInGlobalVariablesInPath(parseMessagePath(path)!, globalVariables)),
     ).toEqual(expected);

@@ -329,6 +329,10 @@ describe("pipeline", () => {
       import {norm} from "./pointClouds";
       const x = norm({x:1, y:2, z:3});
       `,
+      `
+      import { eulerToQuaternion } from "./quaternions";
+      const q = eulerToQuaternion({ x: 0.1, y: 0.2, z: 0.3 });
+      `,
     ])("produces projectCode", (sourceCode) => {
       const { diagnostics, transpiledCode } = compile({ ...baseNodeData, sourceCode });
       expect(diagnostics).toEqual([]);

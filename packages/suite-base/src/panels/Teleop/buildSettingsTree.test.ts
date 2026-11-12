@@ -19,6 +19,8 @@ describe("buildSettingsTree for TeleopPanel", () => {
     downButton: { field: "linear.x", value: -1 },
     leftButton: { field: "angular.z", value: 1 },
     rightButton: { field: "angular.z", value: -1 },
+    stopButton: { field: "linear-x", value: 0 },
+    autoSendStopOnRelease: false,
   };
 
   const sampleTopics = [
@@ -43,6 +45,38 @@ describe("buildSettingsTree for TeleopPanel", () => {
         value: topic,
         items: ["topic1", "topic2"],
       },
+      autoSendStopOnRelease: { label: "Stop on release", input: "boolean", value: false },
+    });
+  });
+
+  it("should include stop button child and stop-on-release toggle", () => {
+    // Given
+    const config: TeleopConfig = {
+      ...defaultConfig,
+      stopButton: { field: "angular-z", value: 0.5 },
+      autoSendStopOnRelease: true,
+    };
+
+    // When
+    const result = buildSettingsTreeTeleop(config, sampleTopics);
+
+    // Then
+    expect(result.general?.children?.stopButton).toEqual({
+      label: "Stop Button",
+      fields: {
+        field: {
+          label: "Field",
+          input: "select",
+          value: "angular-z",
+          options: geometryMsgOptions,
+        },
+        value: { label: "Value", input: "number", value: 0.5 },
+      },
+    });
+    expect(result.general?.fields?.autoSendStopOnRelease).toEqual({
+      label: "Stop on release",
+      input: "boolean",
+      value: true,
     });
   });
 

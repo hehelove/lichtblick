@@ -5,6 +5,7 @@
 // License, v2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/
 
+import { randomBytes } from "crypto";
 import { app, BrowserWindow, ipcMain, Menu, nativeTheme, session } from "electron";
 
 import Logger from "@lichtblick/log";
@@ -19,12 +20,18 @@ import getDevModeIcon from "./getDevModeIcon";
 import { getFilesToOpen } from "./getFilesToOpen";
 import injectFilesToOpen from "./injectFilesToOpen";
 import installChromeExtensions from "./installChromeExtensions";
+import { DEFAULT_MCP_PORT, McpServer } from "./mcp/McpServer";
+import { getMcpState, sendCommandToFocusedWindow } from "./mcp/dispatch";
+import { registerDataTools } from "./mcp/tools/dataTools";
+import { registerLayoutTools } from "./mcp/tools/layoutTools";
+import { registerPlaybackTools } from "./mcp/tools/playbackTools";
+import { registerScriptTools } from "./mcp/tools/scriptTools";
 import { parseCLIFlags } from "./parseCLIFlags";
 import {
   registerRosPackageProtocolHandlers,
   registerRosPackageProtocolSchemes,
 } from "./rosPackageResources";
-import { getAppSetting } from "./settings";
+import { getAppSetting, setAppSetting } from "./settings";
 import {
   LICHTBLICK_PRODUCT_HOMEPAGE,
   LICHTBLICK_PRODUCT_NAME,
@@ -234,6 +241,30 @@ export async function main(): Promise<void> {
     void updateLanguage();
   });
 
+  // The renderer notifies us when MCP-related settings changed so the server can
+  // restart with the new enabled/token/port values.
+  ipcMain.handle(
+    "update-mcp-server",
+    async (_event, options?: { regenerateToken?: boolean }) => {
+      if (options?.regenerateToken === true) {
+        // Persist before the restart so start() resolves the fresh token.
+        // Same format as the token generated inside McpServer's settings reader.
+        setAppSetting(AppSetting.MCP_TOKEN, randomBytes(32).toString("hex"));
+      }
+      const mcp = McpServer.Instance();
+      await mcp.stop();
+      await mcp.start();
+      return {
+        enabled: getAppSetting<boolean>(AppSetting.MCP_ENABLED) ?? false,
+        port: getAppSetting<number>(AppSetting.MCP_PORT) ?? DEFAULT_MCP_PORT,
+        token: getAppSetting<string>(AppSetting.MCP_TOKEN) ?? "",
+        // The setting says "should run"; this says the socket is actually bound (start()
+        // deliberately swallows listen failures like a busy port).
+        listening: mcp.isListening(),
+      };
+    },
+  );
+
   // This method will be called when Electron has finished
   // initialization and is ready to create browser windows.
   // Some APIs can only be used after this event occurs.
@@ -322,6 +353,12 @@ export async function main(): Promise<void> {
 
     initialWindow.load();
     Menu.setApplicationMenu(initialWindow.getMenu()); // When the app is launching for the first time we don't receive the browser-window-focus event.
+
+    registerDataTools(McpServer.Instance(), { getState: getMcpState });
+    registerPlaybackTools(McpServer.Instance(), { sendCommand: sendCommandToFocusedWindow });
+    registerLayoutTools(McpServer.Instance(), { sendCommand: sendCommandToFocusedWindow });
+    registerScriptTools(McpServer.Instance(), { sendCommand: sendCommandToFocusedWindow });
+    void McpServer.Instance().start();
   });
 
   // Quit when all windows are closed, except on macOS. There, it's common
@@ -331,5 +368,9 @@ export async function main(): Promise<void> {
     if (process.platform !== "darwin") {
       app.quit();
     }
+  });
+
+  app.on("will-quit", () => {
+    void McpServer.Instance().stop();
   });
 }

@@ -14,7 +14,7 @@
 //   found at http://www.apache.org/licenses/LICENSE-2.0
 //   You may not use this file except in compliance with the License.
 
-import { AppError } from "@lichtblick/suite-base/util/errors";
+import { AppError, responseErrorMessage } from "@lichtblick/suite-base/util/errors";
 
 describe("errors", () => {
   describe("AppError", () => {
@@ -70,6 +70,30 @@ describe("errors", () => {
         expect.any(Error),
       );
       (console.error as jest.Mock).mockReset();
+    });
+  });
+
+  describe("responseErrorMessage", () => {
+    const makeResponse = (headers: HeadersInit) =>
+      new Response(undefined, { status: 403, headers });
+
+    it("returns the x-foxglove-error-message header value when present", () => {
+      const response = makeResponse({
+        "x-foxglove-error-message": "This file is no longer available",
+      });
+      expect(responseErrorMessage(response, "fallback message")).toBe(
+        "This file is no longer available",
+      );
+    });
+
+    it("returns the fallback when the header is absent", () => {
+      const response = makeResponse({});
+      expect(responseErrorMessage(response, "fallback message")).toBe("fallback message");
+    });
+
+    it("returns the fallback when the header is an empty string", () => {
+      const response = makeResponse({ "x-foxglove-error-message": "" });
+      expect(responseErrorMessage(response, "fallback message")).toBe("fallback message");
     });
   });
 });

@@ -17,7 +17,15 @@ import { expandedLineColors } from "@lichtblick/suite-base/util/plotColors";
 import { getTimestampForMessageEvent } from "@lichtblick/suite-base/util/time";
 
 import positiveModulo from "./positiveModulo";
-import { dynamicSeriesIdentity, getDynamicFields } from "./shared";
+import {
+  DYNAMIC_INDEX_PREFIX,
+  dynamicIndexIdentity,
+  dynamicIndexValue,
+  dynamicSeriesIdentity,
+  getDynamicFields,
+  isIndexIdentity,
+  isLabelKeyedArray,
+} from "./shared";
 import { DynamicMessageDatasetsArgs, MessageDatasetArgs, ValidQueriedDataValue } from "./types";
 
 export const baseColors = [...expandedLineColors];
@@ -70,27 +78,27 @@ export function messagesToDataset(args: MessageDatasetArgs): ChartDataset {
         dynamicSeries == undefined
           ? queriedData
           : extractDynamicData(queriedData.value, path, dynamicSeries.identity);
-      if (
-        selectedData == undefined ||
-        // eslint-disable-next-line @lichtblick/strict-equality
-        selectedData.value === null ||
-        !isValidValue(selectedData.value)
-      ) {
+
+      // A null value marks a gap: break the line here and start a fresh segment once data resumes.
+      // eslint-disable-next-line @lichtblick/strict-equality
+      if (selectedData?.value === null) {
+        if (lastDatum != undefined) {
+          dataset.data.push(lastDatum);
+        }
+        dataset.data.push({ x, y: Number.NaN });
+        lastValue = undefined;
+        lastDatum = undefined;
+        lastValidDatum = undefined;
+        continue;
+      }
+
+      if (selectedData == undefined || !isValidValue(selectedData.value)) {
+        // xs: a dynamic series that vanishes mid-stream breaks the line like a gap
         if (dynamicSeries != undefined && lastValue != undefined) {
           if (lastValidDatum != undefined) {
             dataset.data.push({ ...lastValidDatum, x, label: undefined });
           }
           dataset.data.push(undefined);
-          lastValue = undefined;
-          lastDatum = undefined;
-          lastValidDatum = undefined;
-        }
-        // eslint-disable-next-line @lichtblick/strict-equality
-        if (selectedData?.value === null) {
-          if (lastDatum != undefined) {
-            dataset.data.push(lastDatum);
-          }
-          dataset.data.push({ x, y: Number.NaN });
           lastValue = undefined;
           lastDatum = undefined;
           lastValidDatum = undefined;
@@ -248,6 +256,16 @@ function extractDynamicValues(
   if (!Array.isArray(value)) {
     return result;
   }
+  // Mirrors getDynamicSeries: label-keyed when any entry has a valid label+value, index fallback otherwise.
+  if (!isLabelKeyedArray(value, labelField, valueField)) {
+    value.forEach((entry, index) => {
+      result.set(dynamicIndexIdentity(index), {
+        path: valueField,
+        value: dynamicIndexValue(entry, valueField),
+      });
+    });
+    return result;
+  }
   for (const entry of value) {
     if (typeof entry !== "object" || entry == undefined) {
       continue;
@@ -307,6 +325,15 @@ function extractDynamicData(
   const { labelField, valueField } = getDynamicFields(path);
   if (!Array.isArray(value)) {
     return undefined;
+  }
+  // Mirrors getDynamicSeries' index fallback; out-of-range (or malformed) indexes yield
+  // undefined values, which the caller treats as a gap.
+  if (isIndexIdentity(identity)) {
+    const index = Number(identity.slice(DYNAMIC_INDEX_PREFIX.length));
+    return {
+      path: `${path.value}[${index}]`,
+      value: dynamicIndexValue(value[index], valueField),
+    };
   }
   for (const entry of value) {
     if (typeof entry !== "object" || entry == undefined) {

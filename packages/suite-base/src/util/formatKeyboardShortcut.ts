@@ -26,3 +26,8 @@ export function formatKeyboardShortcut(key: string, modifiers: ModifierKeys[]): 
     key,
   ].join(isMac ? "" : "+");
 }
+
+/** True when the event carries the platform's Cmd/Ctrl shortcut modifier. */
+export function keyboardEventHasModifier(event: KeyboardEvent): boolean {
+  return navigator.userAgent.includes("Mac") ? event.metaKey : event.ctrlKey;
+}

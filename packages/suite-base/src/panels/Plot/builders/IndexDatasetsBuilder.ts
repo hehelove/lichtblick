@@ -51,7 +51,7 @@ export class IndexDatasetsBuilder implements IDatasetsBuilder {
     const range: Bounds1D = { min: 0, max: 0 };
     let datasetsChanged = false;
     for (const series of this.#seriesByKey.values()) {
-      const mathFn = getMathFunction(series.parsed.modifier);
+      const mathFn = getMathFunction(series.parsed.modifier, Number(series.parsed.modifierOperand?.value));
 
       const msgEvent = lastMatchingTopic(msgEvents, series.parsed.topicName);
       if (!msgEvent) {
@@ -64,26 +64,17 @@ export class IndexDatasetsBuilder implements IDatasetsBuilder {
 
       const items = simpleGetMessagePathDataItems(msgEvent, series.parsed);
       const pathItems = filterMap(items, (item, idx) => {
-        // eslint-disable-next-line @lichtblick/strict-equality
-        if (item === null) {
-          return { x: idx, y: Number.NaN, receiveTime: msgEvent.receiveTime, value: null };
-        }
-
-        if (mathFn) {
-          const mathModified = mathFn(item);
-          return {
-            x: idx,
-            y: mathModified,
-            receiveTime: msgEvent.receiveTime,
-            value: mathModified,
-          };
-        }
-
-        const datum = resolveChartDatum(item);
+        const datum = resolveChartDatum(item, mathFn);
         if (!datum) {
           return;
         }
-        return { x: idx, y: datum.y, receiveTime: msgEvent.receiveTime, value: datum.value };
+
+        return {
+          x: idx,
+          y: datum.y,
+          receiveTime: msgEvent.receiveTime,
+          value: datum.value,
+        };
       });
 
       series.dataset.data = pathItems;

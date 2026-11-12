@@ -19,6 +19,11 @@ export function buildSettingsTreeTeleop(
         value: config.topic,
         items: topics.map((t) => t.name),
       },
+      autoSendStopOnRelease: {
+        label: "Stop on release",
+        input: "boolean",
+        value: config.autoSendStopOnRelease,
+      },
     },
     children: {
       upButton: {
@@ -67,6 +72,18 @@ export function buildSettingsTreeTeleop(
             options: geometryMsgOptions,
           },
           value: { label: "Value", input: "number", value: config.rightButton.value },
+        },
+      },
+      stopButton: {
+        label: "Stop Button",
+        fields: {
+          field: {
+            label: "Field",
+            input: "select",
+            value: config.stopButton.field,
+            options: geometryMsgOptions,
+          },
+          value: { label: "Value", input: "number", value: config.stopButton.value },
         },
       },
     },

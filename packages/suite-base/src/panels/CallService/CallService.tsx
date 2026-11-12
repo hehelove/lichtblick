@@ -183,10 +183,25 @@ function CallServiceContent(
 
     try {
       setState({ status: "requesting", value: `Calling ${config.serviceName}...` });
-      const response = await context.callService(
+      const requestPromise = context.callService(
         config.serviceName!,
         JSON.parse(config.requestPayload!),
       );
+      void requestPromise.catch(() => {}); // late settle after a timeout is a no-op
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const response =
+        config.timeoutMs != undefined && config.timeoutMs > 0
+          ? await Promise.race([
+              requestPromise,
+              new Promise<never>((_, reject) => {
+                timer = setTimeout(() => {
+                  reject(new Error(`Service call timed out after ${config.timeoutMs} ms`));
+                }, config.timeoutMs);
+              }),
+            ]).finally(() => {
+              clearTimeout(timer);
+            })
+          : await requestPromise;
       setState({
         status: "success",
         value:
@@ -201,7 +216,7 @@ function CallServiceContent(
       setState({ status: "error", value: (err as Error).message });
       log.error(err);
     }
-  }, [context, config.serviceName, config.requestPayload]);
+  }, [context, config.serviceName, config.requestPayload, config.timeoutMs]);
 
   // Indicate render is complete - the effect runs after the dom is updated
   useEffect(() => {

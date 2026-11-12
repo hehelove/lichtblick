@@ -6,9 +6,10 @@
 import "@testing-library/jest-dom";
 import { render, screen, fireEvent } from "@testing-library/react";
 
+import { AppSetting } from "@lichtblick/suite-base/AppSetting";
 import { useAppConfigurationValue } from "@lichtblick/suite-base/hooks/useAppConfigurationValue";
 
-import { AutoUpdate, StepSize } from "./settings";
+import { AutoUpdate, McpServerSettings, StepSize } from "./settings";
 
 jest.mock("@lichtblick/suite-base/hooks/useAppConfigurationValue", () => ({
   useAppConfigurationValue: jest.fn(),
@@ -54,5 +55,112 @@ describe("AutoUpdate component", () => {
     render(<AutoUpdate />);
     const input: HTMLInputElement = screen.getByRole("checkbox");
     expect(input.checked).toBe(true);
+  });
+});
+
+describe("McpServerSettings component", () => {
+  let updateMcpServer: jest.Mock;
+  let configValues: Record<string, unknown>;
+  let setters: Record<string, jest.Mock>;
+
+  beforeEach(() => {
+    updateMcpServer = jest.fn();
+    configValues = {};
+    setters = {};
+    (global as { desktopBridge?: unknown }).desktopBridge = { updateMcpServer };
+    (useAppConfigurationValue as jest.Mock).mockImplementation((key: string) => [
+      configValues[key],
+      (setters[key] ??= jest.fn()),
+    ]);
+  });
+
+  afterEach(() => {
+    delete (global as { desktopBridge?: unknown }).desktopBridge;
+  });
+
+  it("does not render anything when the desktopBridge global is missing", () => {
+    delete (global as { desktopBridge?: unknown }).desktopBridge;
+
+    render(<McpServerSettings />);
+
+    expect(screen.queryByTestId("mcp-settings")).toBeNull();
+    expect(updateMcpServer).not.toHaveBeenCalled();
+  });
+
+  it("writes MCP_ENABLED, restarts via updateMcpServer, and shows the returned token", async () => {
+    configValues[AppSetting.MCP_ENABLED] = false;
+    updateMcpServer.mockResolvedValue({
+      enabled: true,
+      port: 7333,
+      token: "boot-token",
+      listening: true,
+    });
+
+    render(<McpServerSettings />);
+
+    fireEvent.click(screen.getByRole("checkbox"));
+
+    expect(setters[AppSetting.MCP_ENABLED]!).toHaveBeenCalledWith(true);
+    // The restart call happens after the setting write and surfaces the first-enable token.
+    expect(await screen.findByDisplayValue("boot-token")).toBeInTheDocument();
+    expect(updateMcpServer).toHaveBeenCalledWith();
+  });
+
+  it("regenerates the token via updateMcpServer and displays the returned token", async () => {
+    configValues[AppSetting.MCP_ENABLED] = true;
+    configValues[AppSetting.MCP_TOKEN] = "old-token";
+    updateMcpServer.mockResolvedValue({
+      enabled: true,
+      port: 7333,
+      token: "fresh-token",
+      listening: true,
+    });
+
+    render(<McpServerSettings />);
+    expect(screen.getByDisplayValue("old-token")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Regenerate token" }));
+
+    expect(updateMcpServer).toHaveBeenCalledWith({ regenerateToken: true });
+    expect(await screen.findByDisplayValue("fresh-token")).toBeInTheDocument();
+  });
+
+  it("reports a listen failure honestly instead of claiming to listen", async () => {
+    configValues[AppSetting.MCP_ENABLED] = true;
+    updateMcpServer.mockResolvedValue({
+      enabled: true,
+      port: 7333,
+      token: "t",
+      listening: false,
+    });
+
+    render(<McpServerSettings />);
+    expect(screen.getByText("Listening on 127.0.0.1:7333")).toBeInTheDocument(); // pre-interaction
+
+    fireEvent.click(screen.getByRole("button", { name: "Regenerate token" }));
+
+    expect(
+      await screen.findByText(/Failed to listen on 127.0.0.1:7333/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Listening on/)).toBeNull();
+  });
+
+  it("shows copy snippets containing the current port and token", () => {
+    configValues[AppSetting.MCP_ENABLED] = true;
+    configValues[AppSetting.MCP_TOKEN] = "sekret";
+    configValues[AppSetting.MCP_PORT] = 9001;
+
+    render(<McpServerSettings />);
+
+    expect(
+      screen.getByDisplayValue(
+        'claude mcp add --transport http lichtblick http://127.0.0.1:9001/mcp --header "Authorization: Bearer sekret"',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByDisplayValue(
+        'npx mcp-remote http://127.0.0.1:9001/mcp --header "Authorization: Bearer sekret"',
+      ),
+    ).toBeInTheDocument();
   });
 });

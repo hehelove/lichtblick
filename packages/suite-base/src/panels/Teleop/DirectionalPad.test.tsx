@@ -62,6 +62,7 @@ describe("DirectionalPad", () => {
       DirectionalPadAction.DOWN,
       DirectionalPadAction.LEFT,
       DirectionalPadAction.RIGHT,
+      DirectionalPadAction.STOP,
     ];
 
     buttons.forEach((button, index) => {
@@ -70,5 +71,20 @@ describe("DirectionalPad", () => {
       expect(button.parentElement?.querySelector(".active")).toBeTruthy();
       fireEvent.mouseUp(button);
     });
+  });
+
+  it("should call onAction with STOP and show active state when center button is pressed", () => {
+    // given
+    const onAction = jest.fn();
+    const { container } = render(<DirectionalPad onAction={onAction} />);
+    const buttons = container.querySelectorAll('g[role="button"]');
+    const stopButton = buttons[buttons.length - 1]!;
+
+    // when
+    fireEvent.mouseDown(stopButton);
+
+    // then
+    expect(onAction).toHaveBeenCalledWith(DirectionalPadAction.STOP);
+    expect(stopButton.querySelector(".active")).toBeTruthy();
   });
 });

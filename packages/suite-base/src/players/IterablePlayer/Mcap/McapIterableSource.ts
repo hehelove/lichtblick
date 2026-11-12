@@ -11,6 +11,7 @@ import Log from "@lichtblick/log";
 import { loadDecompressHandlers } from "@lichtblick/mcap-support";
 import { Time } from "@lichtblick/rostime";
 import { MessageEvent } from "@lichtblick/suite-base/players/types";
+import { responseErrorMessage } from "@lichtblick/suite-base/util/errors";
 
 import { BlobReadable } from "./BlobReadable";
 import { McapIndexedIterableSource } from "./McapIndexedIterableSource";
@@ -183,6 +184,14 @@ export class McapIterableSource implements ISerializedIterableSource {
 
   async #openUnindexedUrlFallback(url: string): Promise<OpenedInner> {
     const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(
+        responseErrorMessage(
+          response,
+          `Fetching remote file failed. <${url}> Status code: ${response.status}.`,
+        ),
+      );
+    }
     if (!response.body) {
       throw new Error(`Unable to stream remote file. <${url}>`);
     }

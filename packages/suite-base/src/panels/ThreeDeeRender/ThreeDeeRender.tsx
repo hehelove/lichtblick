@@ -26,6 +26,7 @@ import {
   Topic,
 } from "@lichtblick/suite";
 import { AppSetting } from "@lichtblick/suite-base/AppSetting";
+import { registerRecordableCanvas } from "@lichtblick/suite-base/components/PlaybackControls/videoExport/recordableCanvases";
 import { useAnalytics } from "@lichtblick/suite-base/context/AnalyticsContext";
 import { DEFAULT_SCENE_EXTENSION_CONFIG } from "@lichtblick/suite-base/panels/ThreeDeeRender/SceneExtensionConfig";
 import {
@@ -60,6 +61,7 @@ import {
   makePoseMessage,
 } from "./publish";
 import type { LayerSettingsTransform } from "./renderables/FrameAxes";
+import { parseColorCorrectionRecords } from "./renderables/Images/colorCorrection";
 import { PublishClickEventMap } from "./renderables/PublishClickTool";
 import { DEFAULT_PUBLISH_SETTINGS } from "./renderables/PublishSettings";
 import { synchronizedTopics } from "./topicSynchronization";
@@ -90,6 +92,9 @@ export function ThreeDeeRender(props: Readonly<ThreeDeeRenderProps>): React.JSX.
     customCameraModels,
     enqueueSnackbarFromParent,
     logError,
+    panelId,
+    panelTitle,
+    getMetadata,
   } = props;
   const {
     initialState,
@@ -188,6 +193,18 @@ export function ThreeDeeRender(props: Readonly<ThreeDeeRenderProps>): React.JSX.
   useEffect(() => {
     renderer?.setCustomCameraModels(customCameraModels);
   }, [renderer, customCameraModels]);
+
+  // Register the canvas for video export (covers 3D and Image panels). PanelContext is
+  // not visible from this sync root, so id/title are threaded down from the adapter.
+  useEffect(() => {
+    if (canvas == undefined || panelId == undefined) {
+      return;
+    }
+    return registerRecordableCanvas(panelId, {
+      canvas,
+      title: panelTitle ?? (interfaceMode === "image" ? "Image" : "3D"),
+    });
+  }, [canvas, panelId, panelTitle, interfaceMode]);
 
   useEffect(() => {
     if (renderer) {
@@ -385,6 +402,29 @@ export function ThreeDeeRender(props: Readonly<ThreeDeeRenderProps>): React.JSX.
     }
   }, [topics, renderer]);
 
+  // Push rccg12 color-correction matrices from file metadata (MCAP-only) into the renderer.
+  // Metadata is not part of RenderState (a deferred player-API change), so the pipeline getter
+  // is threaded in as a prop from the adapter — this component runs inside createSyncRoot,
+  // a separate React root where the MessagePipeline context is NOT visible.
+  // The getMetadata prop identity is stable per player, so the memo is keyed on activeData
+  // presence: MCAP metadata lands during async player init, before the first activeData,
+  // which makes the false->true transition the point where the metadata first becomes
+  // readable. currentTime is set from renderState the same way and serves as that signal.
+  // ponytail: applied when image renderables are created; a renderable that already exists
+  // before a late metadata update picks the matrix up on its next setSettings.
+  const hasActiveData = currentTime != undefined;
+  const colorCorrections = useMemo(() => {
+    const map = new Map<string, ReadonlyArray<number>>();
+    for (const { topic, matrix } of parseColorCorrectionRecords(getMetadata())) {
+      map.set(topic, matrix);
+    }
+    return map;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- hasActiveData intentionally gates the metadata-readable transition
+  }, [getMetadata, hasActiveData]);
+  useEffect(() => {
+    renderer?.setColorCorrections(colorCorrections);
+  }, [renderer, colorCorrections]);
+
   const hasTransformTopics = useMemo(
     () => topics?.some((topic) => TRANSFORM_TOPIC_SCHEMAS.has(topic.schemaName)) ?? false,
     [topics],
@@ -450,6 +490,7 @@ export function ThreeDeeRender(props: Readonly<ThreeDeeRenderProps>): React.JSX.
       return [];
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- preload still drives allFrames delivery
     const filteredTopics = topicsToSubscribe.filter((sub) => sub.preload === true);
 
     // Manual comparison for better performance than lodash.isEqual
@@ -524,7 +565,7 @@ export function ThreeDeeRender(props: Readonly<ThreeDeeRenderProps>): React.JSX.
 
     for (const topic of transformTopics) {
       const promise = new Promise<void>((resolve) => {
-        const unsubscribe = context.unstable_subscribeMessageRange({
+        const unsubscribe = context.subscribeMessageRange?.({
           topic: topic.topic,
           convertTo: topic.convertTo,
           onNewRangeIterator: async (batchIterator) => {
@@ -543,7 +584,9 @@ export function ThreeDeeRender(props: Readonly<ThreeDeeRenderProps>): React.JSX.
             resolve();
           },
         });
-        unsubscriptions.push(unsubscribe);
+        if (unsubscribe) {
+          unsubscriptions.push(unsubscribe);
+        }
       });
       subscriptionPromises.push(promise);
     }

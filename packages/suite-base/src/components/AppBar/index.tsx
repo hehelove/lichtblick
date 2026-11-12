@@ -20,6 +20,7 @@ import tc from "tinycolor2";
 import { makeStyles } from "tss-react/mui";
 
 import { AppSetting } from "@lichtblick/suite-base/AppSetting";
+import { CompareSourcesButton } from "@lichtblick/suite-base/components/CompareSources/CompareSourcesButton";
 import { LichtblickLogo } from "@lichtblick/suite-base/components/LichtblickLogo";
 import { MemoryUseIndicator } from "@lichtblick/suite-base/components/MemoryUseIndicator";
 import Stack from "@lichtblick/suite-base/components/Stack";
@@ -97,6 +98,8 @@ const useStyles = makeStyles<{ debugDragRegion?: boolean }, "avatar">()(
       middle: {
         gridArea: "middle",
         justifySelf: "center",
+        display: "flex",
+        alignItems: "center",
         overflow: "hidden",
         maxWidth: "100%",
         ...NOT_DRAGGABLE_STYLE, // make buttons clickable for desktop app
@@ -253,6 +256,7 @@ export function AppBar(props: AppBarProps): React.JSX.Element {
 
           <div className={classes.middle}>
             <DataSource />
+            <CompareSourcesButton />
           </div>
 
           <div className={classes.end}>

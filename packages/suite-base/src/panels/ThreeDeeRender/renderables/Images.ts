@@ -280,7 +280,13 @@ export class Images extends SceneExtension<ImageRenderable> {
       return;
     }
 
-    renderable.setSettings({ ...IMAGE_RENDERABLE_DEFAULT_SETTINGS, ...settings });
+    // Re-inject the metadata CCM: `settings` comes from persisted config, which never
+    // carries colorCorrection, so without this a user edit would revert to the default matrix.
+    renderable.setSettings({
+      ...IMAGE_RENDERABLE_DEFAULT_SETTINGS,
+      ...settings,
+      colorCorrection: this.renderer.colorCorrections.get(imageTopic),
+    });
 
     // The camera info topic changed for our renderable
     // Remove the previous camera_info_topic -> image_topic mapping
@@ -486,7 +492,11 @@ export class Images extends SceneExtension<ImageRenderable> {
       pose: makePose(),
       settingsPath: ["topics", imageTopic],
       topic: imageTopic,
-      settings: { ...IMAGE_RENDERABLE_DEFAULT_SETTINGS, ...userSettings },
+      settings: {
+        ...IMAGE_RENDERABLE_DEFAULT_SETTINGS,
+        ...userSettings,
+        colorCorrection: this.renderer.colorCorrections.get(imageTopic),
+      },
       cameraInfo: undefined,
       cameraModel: undefined,
       image,

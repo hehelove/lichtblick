@@ -22,6 +22,7 @@ import {
   Desktop,
   ForwardedMenuEvent,
   ForwardedWindowEvent,
+  McpStateSnapshot,
   NativeMenuBridge,
   Storage,
 } from "../common/types";
@@ -132,6 +133,14 @@ export function main(): void {
     async updateLanguage() {
       await ipcRenderer.invoke("updateLanguage");
     },
+    async updateMcpServer(options?: { regenerateToken?: boolean }) {
+      return await (ipcRenderer.invoke("update-mcp-server", options) as Promise<{
+        enabled: boolean;
+        port: number;
+        token: string;
+        listening: boolean;
+      }>);
+    },
     async getCLIFlags(): Promise<CLIFlags> {
       return await (ipcRenderer.invoke("getCLIFlags") as Promise<CLIFlags>);
     },
@@ -193,6 +202,25 @@ export function main(): void {
     },
     reloadWindow() {
       ipcRenderer.send("reloadMainWindow");
+    },
+    // MCP bridge
+    sendMcpStateSnapshot(snapshot: McpStateSnapshot) {
+      ipcRenderer.send("mcp-state-snapshot", snapshot);
+    },
+    onMcpCommand(handler: (msg: { id: number; type: string; payload: unknown }) => void) {
+      const listener = (
+        _ev: unknown,
+        msg: { id: number; type: string; payload: unknown },
+      ): void => {
+        handler(msg);
+      };
+      ipcRenderer.on("mcp-command", listener);
+      return () => {
+        ipcRenderer.off("mcp-command", listener);
+      };
+    },
+    sendMcpResult(id: number, result: unknown) {
+      void ipcRenderer.invoke("mcp-result", id, result);
     },
   };
 

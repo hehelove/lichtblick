@@ -7,6 +7,7 @@ import {
   WorkspaceLayoutResponse,
 } from "@lichtblick/suite-base/api/layouts/types";
 import { LayoutID } from "@lichtblick/suite-base/context/CurrentLayoutContext";
+import { HttpError } from "@lichtblick/suite-base/services/http/HttpError";
 import HttpService from "@lichtblick/suite-base/services/http/HttpService";
 import { BasicBuilder } from "@lichtblick/test-builders";
 
@@ -232,5 +233,58 @@ describe("LayoutsAPI", () => {
 
       await expect(layoutsAPI.deleteLayout("external-123")).rejects.toThrow("Delete failed");
     });
+  });
+});
+
+describe("LayoutsAPI 合约（布局同步服务端契约）", () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it("getLayouts 映射 layoutId→id、id→externalId、updatedAt→savedAt", async () => {
+    jest.spyOn(HttpService, "get").mockResolvedValue({
+      data: [
+        {
+          id: "ext-1",
+          layoutId: "local-1",
+          name: "N",
+          data: { layout: {} },
+          workspace: "ws",
+          permission: "CREATED_BY_ME",
+          from: "",
+          createdAt: "2026-10-12T00:00:00Z",
+          updatedAt: "2026-10-12T01:00:00Z",
+        },
+      ],
+      timestamp: "",
+      path: "",
+    });
+    const api = new LayoutsAPI("ws");
+    const layouts = await api.getLayouts();
+    expect(layouts).toEqual([
+      {
+        id: "local-1",
+        externalId: "ext-1",
+        name: "N",
+        data: { layout: {} },
+        permission: "CREATED_BY_ME",
+        savedAt: "2026-10-12T01:00:00Z",
+      },
+    ]);
+  });
+
+  it("deleteLayout 按响应 data 真值判布尔（null→false）", async () => {
+    const del = jest.spyOn(HttpService, "delete");
+    del.mockResolvedValueOnce({ data: { id: "ext" }, timestamp: "", path: "" });
+    del.mockResolvedValueOnce({ data: null, timestamp: "", path: "" });
+    const api = new LayoutsAPI("ws");
+    await expect(api.deleteLayout("ext")).resolves.toBe(true);
+    await expect(api.deleteLayout("ext")).resolves.toBe(false);
+  });
+
+  it("401 以 HttpError 抛出（喂给 LayoutManager 既有退避路径，不得吞成空列表）", async () => {
+    jest.spyOn(HttpService, "get").mockRejectedValue(new HttpError("HTTP Error: 401", 401, "Unauthorized"));
+    const api = new LayoutsAPI("ws");
+    await expect(api.getLayouts()).rejects.toBeInstanceOf(HttpError);
   });
 });

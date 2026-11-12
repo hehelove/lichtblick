@@ -44,5 +44,8 @@ addFoxgloveSchema(POSES_IN_FRAME_DATATYPES, "foxglove.PosesInFrame");
 export const GRID_DATATYPES = new Set<string>();
 addFoxgloveSchema(GRID_DATATYPES, "foxglove.Grid");
 
+export const LOCATION_FIX_DATATYPES = new Set<string>();
+addFoxgloveSchema(LOCATION_FIX_DATATYPES, "foxglove.LocationFix");
+
 export const IMAGE_ANNOTATIONS_DATATYPES = new Set<string>();
 addFoxgloveSchema(IMAGE_ANNOTATIONS_DATATYPES, "foxglove.ImageAnnotations");

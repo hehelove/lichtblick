@@ -143,7 +143,7 @@ IterablePlayer (playback iterator)
 
 ### subscribeMessageRange (Preferred Preloading Pattern)
 
-The `useSubscribeMessageRange` hook (`packages/suite-base/src/components/PanelExtensionAdapter/useSubscribeMessageRange.ts`) is the modern replacement for BlockLoader-based preloading. It is used directly by built-in panels (Plot, StateTransitions) and is also exposed to extension panels via `context.unstable_subscribeMessageRange`.
+The `useSubscribeMessageRange` hook (`packages/suite-base/src/components/PanelExtensionAdapter/useSubscribeMessageRange.ts`) is the modern replacement for BlockLoader-based preloading. It is used directly by built-in panels (Plot, StateTransitions) and is also exposed to extension panels via `context.subscribeMessageRange` (deprecated aliases `unstable_subscribeMessageRange`/`UNSTABLE_subscribeMessageRange`).
 
 ```typescript
 const subscribeMessageRange = useSubscribeMessageRange();

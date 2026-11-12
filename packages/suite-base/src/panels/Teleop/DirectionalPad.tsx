@@ -114,6 +114,20 @@ function DirectionalPad(props: Readonly<DirectionalPadProps>): React.JSX.Element
             <path className={cx(classes.buttonIcon, { disabled })} d={svgPathsDisabled.right} />
           </g>
         </g>
+
+        <g opacity={1}>
+          {/* STOP button */}
+          <g {...makeMouseHandlers(DirectionalPadAction.STOP)} role="button">
+            <path
+              className={cx(classes.button, {
+                active: currentAction === DirectionalPadAction.STOP,
+                disabled,
+              })}
+              d={svgPathsEnabled.stop}
+            />
+            <path className={cx(classes.buttonIcon, { disabled })} d={svgPathsDisabled.stop} />
+          </g>
+        </g>
       </svg>
     </Stack>
   );

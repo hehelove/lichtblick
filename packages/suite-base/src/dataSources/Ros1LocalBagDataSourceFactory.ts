@@ -14,6 +14,22 @@ import { IterablePlayer } from "@lichtblick/suite-base/players/IterablePlayer";
 import { WorkerSerializedIterableSource } from "@lichtblick/suite-base/players/IterablePlayer/WorkerSerializedIterableSource";
 import { Player } from "@lichtblick/suite-base/players/types";
 
+/** Builds the worker-backed ROS 1 Bag source shared by single-file open and comparison mode. */
+export function buildRos1BagSource(file: File): WorkerSerializedIterableSource {
+  return new WorkerSerializedIterableSource({
+    initWorker: () => {
+      return new Worker(
+        // foxglove-depcheck-used: babel-plugin-transform-import-meta
+        new URL(
+          "@lichtblick/suite-base/players/IterablePlayer/BagIterableSourceWorker.worker",
+          import.meta.url,
+        ),
+      );
+    },
+    initArgs: { file },
+  });
+}
+
 class Ros1LocalBagDataSourceFactory implements IDataSourceFactory {
   public id = "ros1-local-bagfile";
   public type: IDataSourceFactory["type"] = "file";
@@ -36,18 +52,7 @@ class Ros1LocalBagDataSourceFactory implements IDataSourceFactory {
       return;
     }
 
-    const source = new WorkerSerializedIterableSource({
-      initWorker: () => {
-        return new Worker(
-          // foxglove-depcheck-used: babel-plugin-transform-import-meta
-          new URL(
-            "@lichtblick/suite-base/players/IterablePlayer/BagIterableSourceWorker.worker",
-            import.meta.url,
-          ),
-        );
-      },
-      initArgs: { file },
-    });
+    const source = buildRos1BagSource(file);
 
     return new IterablePlayer({
       metricsCollector: args.metricsCollector,

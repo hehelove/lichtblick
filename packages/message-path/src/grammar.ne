@@ -14,7 +14,13 @@
 #
 # For more examples, please see parseRosPath.test.js
 main -> topicName messagePath:? modifier:?
-  {% (d) => ({ topicName: d[0].value, topicNameRepr: d[0].repr, messagePath: d[1] || [], modifier: d[2] }) %}
+  {% (d) => ({
+      topicName: d[0].value,
+      topicNameRepr: d[0].repr,
+      messagePath: d[1] || [],
+      modifier: d[2] ? d[2].name : d[2],
+      modifierOperand: d[2]?.operand,
+  }) %}
 
 ## Primitives
 
@@ -134,7 +140,34 @@ filter -> "{" simplePath:? "}"
             %}
 
 ## Modifier.
-# Optional modifier at the end of a path, e.g. `.@derivative` or Math modifiers. Currently only used by the Plot
+# Optional modifier at the end of a path, e.g. `.@derivative` or Math modifiers, optionally with
+# a parenthesized operand like `.@mul(1e-9)` or `.@add($speed)`. Currently only used by the Plot
 # panel, and we should either deprecate this or actually support it properly.
-modifier -> ".@" id:?
-  {% (d) => d[1] || "" %}
+modifier -> ".@" id:? operand:?
+  {% (d) => ({ name: d[1] || "", operand: d[2] ?? undefined }) %}
+
+# A parenthesized operand for operand-carrying modifiers. Only used by `modifier` — the filter
+# `value` rule is intentionally untouched so filter semantics stay frozen.
+operand -> "(" operandValue ")"
+  {% (d) => d[1] %}
+operandValue -> decimal  {% (d) => d[0] %}
+             | integer  {% (d) => d[0] %}
+             | variable {% (d) => d[0] %}
+
+exponent -> "e" "-":? [0-9]:+ {% (d) => d[0] + (d[1] ?? "") + d[2].join("") %}
+          | "E" "-":? [0-9]:+ {% (d) => d[0] + (d[1] ?? "") + d[2].join("") %}
+
+# A decimal number (with optional fraction and/or exponent), e.g. `0.5`, `-2.5`, `1e-9`.
+# At least one of fraction or exponent is required so a plain `3` only parses via `integer`
+# (as a BigInt) and the grammar stays unambiguous.
+decimal
+   -> "-":? [0-9]:+ "." [0-9]:+ exponent:?
+      {% (d) => {
+        const repr = (d[0] ?? "") + d[1].join("") + "." + d[3].join("") + (d[4] ?? "");
+        return { value: Number(repr), repr };
+      } %}
+    | "-":? [0-9]:+ exponent
+      {% (d) => {
+        const repr = (d[0] ?? "") + d[1].join("") + d[2];
+        return { value: Number(repr), repr };
+      } %}

@@ -22,7 +22,7 @@ import {
 } from "./IDatasetsBuilder";
 import { CurrentFrameSeriesItem } from "./types";
 import { buildViewportDatasets, lastMatchingTopic, setSeries } from "./utils";
-import { getChartValue, isChartValue, resolveChartDatum } from "../utils/datum";
+import { resolveChartDatum } from "../utils/datum";
 import { DynamicSeriesResolver, isDynamicSeries } from "../utils/dynamicSeries";
 
 /**
@@ -56,7 +56,7 @@ export class CurrentCustomDatasetsBuilder implements IDatasetsBuilder {
 
     let datasetsChanged = false;
     {
-      const xAxisMathFn = getMathFunction(this.#xParsedPath.modifier);
+      const xAxisMathFn = getMathFunction(this.#xParsedPath.modifier, Number(this.#xParsedPath.modifierOperand?.value));
 
       const msgEvent = lastMatchingTopic(msgEvents, this.#xParsedPath.topicName);
       if (msgEvent) {
@@ -65,27 +65,18 @@ export class CurrentCustomDatasetsBuilder implements IDatasetsBuilder {
         datasetsChanged ||= items.length > 0;
         this.#xValues = [];
         for (const item of items) {
-          if (xAxisMathFn) {
-            this.#xValues.push(xAxisMathFn(item));
+          const datum = resolveChartDatum(item, xAxisMathFn);
+          if (!datum) {
             continue;
           }
 
-          if (!isChartValue(item)) {
-            continue;
-          }
-
-          const chartValue = getChartValue(item);
-          if (chartValue == undefined) {
-            continue;
-          }
-
-          this.#xValues.push(chartValue);
+          this.#xValues.push(datum.y);
         }
       }
     }
 
     for (const series of this.#seriesByKey.values()) {
-      const mathFn = getMathFunction(series.parsed.modifier);
+      const mathFn = getMathFunction(series.parsed.modifier, Number(series.parsed.modifierOperand?.value));
 
       const msgEvent = lastMatchingTopic(msgEvents, series.parsed.topicName);
       if (!msgEvent) {
@@ -96,30 +87,11 @@ export class CurrentCustomDatasetsBuilder implements IDatasetsBuilder {
       datasetsChanged ||= items.length > 0;
 
       const pathItems = filterMap(items, (item, idx) => {
-        // eslint-disable-next-line @lichtblick/strict-equality
-        if (item === null) {
-          return {
-            x: this.#xValues[idx] ?? NaN,
-            y: Number.NaN,
-            receiveTime: msgEvent.receiveTime,
-            value: null,
-          };
-        }
-
-        if (mathFn) {
-          const mathModified = mathFn(item);
-          return {
-            x: this.#xValues[idx] ?? NaN,
-            y: mathModified,
-            receiveTime: msgEvent.receiveTime,
-            value: mathModified,
-          };
-        }
-
-        const datum = resolveChartDatum(item);
+        const datum = resolveChartDatum(item, mathFn);
         if (!datum) {
           return;
         }
+
         return {
           x: this.#xValues[idx] ?? NaN,
           y: datum.y,

@@ -41,6 +41,7 @@ import {
   HUDItem,
 } from "@lichtblick/suite-base/panels/ThreeDeeRender/HUDItemManager";
 import { LayerErrors } from "@lichtblick/suite-base/panels/ThreeDeeRender/LayerErrors";
+import { isAnimationFrameId } from "@lichtblick/suite-base/panels/ThreeDeeRender/renderables/FrameAxes";
 import { ICameraHandler } from "@lichtblick/suite-base/panels/ThreeDeeRender/renderables/ICameraHandler";
 import IAnalytics from "@lichtblick/suite-base/services/IAnalytics";
 import { palette, fontMonospace } from "@lichtblick/theme";
@@ -144,6 +145,26 @@ const CYCLE_DETECTED = "CYCLE_DETECTED";
 const FOLLOW_FRAME_NOT_FOUND = "FOLLOW_FRAME_NOT_FOUND";
 const ADD_TRANSFORM_ERROR = "ADD_TRANSFORM_ERROR";
 
+/**
+ * TF 前视窗口（v0.5.20 fork patch，2026-10-19）。
+ *
+ * 录包回放时 allFrames 里本来就有未来消息，但 handleAllFramesMessages 只投递
+ * receiveTime <= currentTime 的消息，导致 transform tree 里永远没有「未来样本」，
+ * findClosestTransforms 在游标处只能 clamp 到最新样本（held）。
+ *
+ * 这里让 TF 类消息额外提前 TF_LOOKAHEAD_NS 入树：渲染游标 T 因此恰好落在
+ * 「T-Δ」和「T+Δ」两条真实样本之间，插值结果就是 T 时刻的真实位姿——
+ * 零显示延迟且连续。SceneUpdate 等其他消息仍严格按 currentTime 投递。
+ * 仅在有预载缓冲（allFrames，文件回放 + enablePreloading）时生效；实时流无未来数据。
+ */
+const TF_LOOKAHEAD_NS = BigInt(250_000_000);
+const TF_LOOKAHEAD_SCHEMAS = new Set<string>([
+  ...FRAME_TRANSFORM_DATATYPES,
+  ...FRAME_TRANSFORMS_DATATYPES,
+  ...TF_DATATYPES,
+  ...TRANSFORM_STAMPED_DATATYPES,
+]);
+
 // An extensionId for creating the top-level settings nodes such as "Topics" and
 // "Custom Layers"
 const RENDERER_ID = "foxglove.Renderer";
@@ -200,6 +221,8 @@ export class Renderer extends EventEmitter<RendererEvents> implements IRenderer 
   public maxLod = DetailLevel.High;
 
   public customCameraModels: CameraModelsMap = new Map();
+  /** topic name -> 9-entry row-major rccg12 color-correction matrix (from MCAP metadata). */
+  public colorCorrections = new Map<string, ReadonlyArray<number>>();
 
   public debugPicking: boolean;
   public config: Immutable<RendererConfig>;
@@ -600,6 +623,8 @@ export class Renderer extends EventEmitter<RendererEvents> implements IRenderer 
         lastReadMessage: newCursorIndex >= 0 ? allFrames[newCursorIndex] : undefined,
         cursorTimeReached: targetTime,
       };
+      // 未来 TF 已被 clearAfter 删除，前视游标回到目标位置以便重新读入
+      this.#tfLookaheadIndex = newCursorIndex;
 
       // Clear subscription queues and renderables but preserve valid transforms
       this.#clearSubscriptionQueues();
@@ -685,6 +710,12 @@ export class Renderer extends EventEmitter<RendererEvents> implements IRenderer 
     this.queueAnimationFrame();
   }
 
+  /**
+   * allFrames 中「TF 前视」已处理到的下标（v0.5.20）。TF 消息允许提前到
+   * currentTime + TF_LOOKAHEAD_NS 入树，其余消息仍按 currentTime 投递。
+   */
+  #tfLookaheadIndex = -1;
+
   #allFramesCursor: {
     // index represents where the last read message is in allFrames
     index: number;
@@ -716,6 +747,7 @@ export class Renderer extends EventEmitter<RendererEvents> implements IRenderer 
       lastReadMessage: undefined,
       cursorTimeReached: undefined,
     };
+    this.#tfLookaheadIndex = -1;
     this.emit("resetAllFramesCursor", this);
   }
 
@@ -781,9 +813,33 @@ export class Renderer extends EventEmitter<RendererEvents> implements IRenderer 
     }
 
     // Process all collected messages in batch if any were found
-    const hasAddedMessageEvents = messagesToProcess.length > 0;
+    let hasAddedMessageEvents = messagesToProcess.length > 0;
     if (hasAddedMessageEvents) {
       this.addMessageEventBatch(messagesToProcess);
+    }
+
+    // v0.5.20：TF 前视——只把 TF 类消息提前到 currentTime + TF_LOOKAHEAD_NS 入树。
+    // 其余消息（SceneUpdate 等）仍严格按 currentTime 投递，不提前暴露未来几何。
+    // 关闭预加载时仍按当前游标处理；缓存中有未来消息不代表允许前视。
+    const lookaheadLimitNs =
+      this.currentTime +
+      (this.config.scene.transforms?.enablePreloading === true ? TF_LOOKAHEAD_NS : 0n);
+    let tfCursor = Math.max(this.#tfLookaheadIndex, cursor);
+    const tfMessagesToProcess: MessageEvent[] = [];
+    while (tfCursor < allFrames.length - 1) {
+      const next = allFrames[tfCursor + 1]!;
+      if (toNanoSec(next.receiveTime) > lookaheadLimitNs) {
+        break;
+      }
+      tfCursor++;
+      if (TF_LOOKAHEAD_SCHEMAS.has(next.schemaName)) {
+        tfMessagesToProcess.push(next);
+      }
+    }
+    this.#tfLookaheadIndex = tfCursor;
+    if (tfMessagesToProcess.length > 0) {
+      this.addMessageEventBatch(tfMessagesToProcess);
+      hasAddedMessageEvents = true;
     }
 
     // want to avoid setting anything if nothing has changed
@@ -1327,11 +1383,22 @@ export class Renderer extends EventEmitter<RendererEvents> implements IRenderer 
     return frameId.slice(1);
   }
 
+  /**
+   * 重建帧下拉列表（followTf/固定帧选择器 + FrameAxes 设置树的数据源）。
+   * 过滤 xs 扩展的动画辅助帧（obstf/...，插值 TF 载体）：数量随 track_id 增长，
+   * 不过滤会灌满下拉与设置树，且 FrameAxes 会为它们画父连线。
+   */
+  #refreshCoordinateFrameList(): void {
+    this.coordinateFrameList = this.transformTree
+      .frameList()
+      .filter((entry) => !isAnimationFrameId(entry.value));
+  }
+
   public addCoordinateFrame(frameId: string): void {
     const normalizedFrameId = this.normalizeFrameId(frameId);
     if (!this.transformTree.hasFrame(normalizedFrameId)) {
       this.transformTree.getOrCreateFrame(normalizedFrameId);
-      this.coordinateFrameList = this.transformTree.frameList();
+      this.#refreshCoordinateFrameList();
       // log.debug(`Added coordinate frame "${normalizedFrameId}"`);
       this.emit("transformTreeUpdated", this);
     }
@@ -1421,7 +1488,7 @@ export class Renderer extends EventEmitter<RendererEvents> implements IRenderer 
     const status = this.transformTree.addTransform(childFrameId, parentFrameId, stamp, transform);
 
     if (status === AddTransformResult.UPDATED) {
-      this.coordinateFrameList = this.transformTree.frameList();
+      this.#refreshCoordinateFrameList();
       this.emit("transformTreeUpdated", this);
     }
 
@@ -1455,7 +1522,7 @@ export class Renderer extends EventEmitter<RendererEvents> implements IRenderer 
 
   public removeTransform(childFrameId: string, parentFrameId: string, stamp: bigint): void {
     this.transformTree.removeTransform(childFrameId, parentFrameId, stamp);
-    this.coordinateFrameList = this.transformTree.frameList();
+    this.#refreshCoordinateFrameList();
     this.emit("transformTreeUpdated", this);
   }
 
@@ -1926,6 +1993,10 @@ export class Renderer extends EventEmitter<RendererEvents> implements IRenderer 
 
   public setCustomCameraModels(newCameraModels: CameraModelsMap): void {
     this.customCameraModels = newCameraModels;
+  }
+
+  public setColorCorrections(newColorCorrections: Map<string, ReadonlyArray<number>>): void {
+    this.colorCorrections = newColorCorrections;
   }
 }
 

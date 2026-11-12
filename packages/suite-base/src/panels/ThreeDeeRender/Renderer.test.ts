@@ -1947,15 +1947,15 @@ describe("3D Renderer", () => {
       },
     });
     const allFrames = [
-      createTFMessageEvent("root", "before4", 5n, [1n]),
-      createTFMessageEvent("root", "before2", 6n, [4n]),
-      createTFMessageEvent("root", "on", 7n, [7n]),
-      createTFMessageEvent("root", "after2", 8n, [10n]),
-      createTFMessageEvent("root", "after4", 9n, [13n]),
+      createTFMessageEvent("root", "before4", 5000000000n, [1000000000n]),
+      createTFMessageEvent("root", "before2", 6000000000n, [4000000000n]),
+      createTFMessageEvent("root", "on", 7000000000n, [7000000000n]),
+      createTFMessageEvent("root", "after2", 8000000000n, [10000000000n]),
+      createTFMessageEvent("root", "after4", 9000000000n, [13000000000n]),
     ];
 
     // initialize renderer with transforms
-    let currentTime = 8n;
+    let currentTime = 8000000000n;
     renderer.setCurrentTime(currentTime);
     renderer.handleAllFramesMessages(allFrames);
     // messages processed by renderer on animation frame
@@ -1966,10 +1966,10 @@ describe("3D Renderer", () => {
     expect(renderer.transformTree.frame("after2")).not.toBeUndefined();
     expect(renderer.transformTree.frame("after4")).toBeUndefined();
 
-    //seek to 6n (backwards)
+    //seek to 6000000000n (backwards)
 
     const oldTime = currentTime;
-    currentTime = 6n;
+    currentTime = 6000000000n;
     renderer.setCurrentTime(currentTime);
     renderer.handleSeek(oldTime);
     // should have cleared transforms so that no future-to-the-currentTime transforms are in the tree
@@ -1999,15 +1999,15 @@ describe("3D Renderer", () => {
       },
     });
     const allFrames = [
-      createTFMessageEvent("root", "before4", 5n, [1n]),
-      createTFMessageEvent("root", "before2", 6n, [4n]),
-      createTFMessageEvent("root", "on", 7n, [7n]),
-      createTFMessageEvent("root", "after2", 8n, [10n]),
-      createTFMessageEvent("root", "after4", 9n, [13n]),
+      createTFMessageEvent("root", "before4", 5000000000n, [1000000000n]),
+      createTFMessageEvent("root", "before2", 6000000000n, [4000000000n]),
+      createTFMessageEvent("root", "on", 7000000000n, [7000000000n]),
+      createTFMessageEvent("root", "after2", 8000000000n, [10000000000n]),
+      createTFMessageEvent("root", "after4", 9000000000n, [13000000000n]),
     ];
 
     // initialize renderer with normal transforms
-    let currentTime = 7n;
+    let currentTime = 7000000000n;
     renderer.setCurrentTime(currentTime);
     renderer.handleAllFramesMessages(allFrames);
     // messages processed by renderer on animation frame
@@ -2018,10 +2018,10 @@ describe("3D Renderer", () => {
     expect(renderer.transformTree.frame("after2")).toBeUndefined();
     expect(renderer.transformTree.frame("after4")).toBeUndefined();
 
-    //seek to 9n (forwards)
+    //seek to 9000000000n (forwards)
 
     const oldTime = currentTime;
-    currentTime = 9n;
+    currentTime = 9000000000n;
     renderer.setCurrentTime(currentTime);
     renderer.handleSeek(oldTime);
     // should not have cleared tree, so should be same as before
@@ -2078,6 +2078,71 @@ describe("Renderer.handleAllFramesMessages behavior", () => {
     renderer.handleAllFramesMessages(msgs);
     expect(addMessageEventMock).not.toHaveBeenCalled();
   });
+  it("只预加载250毫秒内的TF，不提前投递场景几何或重复处理暂停帧", () => {
+    const renderer = new Renderer({
+      ...rendererArgs,
+      config: { ...defaultRendererConfig, scene: { transforms: { enablePreloading: true } } },
+    });
+    const now = 1_000_000_000n;
+    const currentTf = createFrameTransformEvent("world", "ego", now, now);
+    const futureTf = createFrameTransformEvent(
+      "world",
+      "obstf/1",
+      now + 250_000_000n,
+      now + 250_000_000n,
+    );
+    const outsideTf = createFrameTransformEvent(
+      "world",
+      "outside",
+      now + 250_000_001n,
+      now + 250_000_001n,
+    );
+    const futureGeometry: MessageEvent = {
+      topic: "/scene",
+      schemaName: "foxglove.SceneUpdate",
+      receiveTime: fromNanoSec(now + 100_000_000n),
+      sizeInBytes: 0,
+      message: { entities: [], deletions: [] },
+    };
+    const messages = [currentTf, futureGeometry, futureTf, outsideTf];
+    const batches = jest.spyOn(renderer, "addMessageEventBatch");
+    renderer.setCurrentTime(now);
+    expect(renderer.handleAllFramesMessages(messages)).toBe(true);
+    expect(batches.mock.calls.flatMap(([batch]) => batch)).toEqual([currentTf, futureTf]);
+    batches.mockClear();
+    expect(renderer.handleAllFramesMessages(messages)).toBe(false);
+    expect(batches).not.toHaveBeenCalled();
+    renderer.dispose();
+  });
+
+  it("倒退拖动后重新加载目标附近的前视TF", () => {
+    const renderer = new Renderer({
+      ...rendererArgs,
+      config: { ...defaultRendererConfig, scene: { transforms: { enablePreloading: true } } },
+    });
+    const first = createFrameTransformEvent("world", "ego", 1_000_000_000n, 1_000_000_000n);
+    const nearFirst = createFrameTransformEvent(
+      "world",
+      "nearFirst",
+      1_200_000_000n,
+      1_200_000_000n,
+    );
+    const later = createFrameTransformEvent("world", "later", 2_000_000_000n, 2_000_000_000n);
+    const messages = [first, nearFirst, later];
+    renderer.setCurrentTime(2_000_000_000n);
+    renderer.handleAllFramesMessages(messages);
+    renderer.animationFrame();
+    renderer.setCurrentTime(1_000_000_000n);
+    renderer.handleSeek(2_000_000_000n, messages);
+    const batches = jest.spyOn(renderer, "addMessageEventBatch");
+    renderer.handleAllFramesMessages(messages);
+    expect(batches.mock.calls.flatMap(([batch]) => batch)).toContain(nearFirst);
+    expect(batches.mock.calls.flatMap(([batch]) => batch)).not.toContain(later);
+    renderer.animationFrame();
+    expect(renderer.transformTree.frame("nearFirst")).toBeDefined();
+    renderer.dispose();
+  });
+
   it("adds messages with receiveTime up to currentTime", () => {
     // Given: A renderer with 10 messages
     const renderer = new Renderer(rendererArgs);

@@ -12,6 +12,7 @@ import QuestionAnswerOutlinedIcon from "@mui/icons-material/QuestionAnswerOutlin
 import WebIcon from "@mui/icons-material/Web";
 import {
   Autocomplete,
+  Button,
   Checkbox,
   Divider,
   FormControl,
@@ -24,15 +25,17 @@ import {
   ToggleButton,
   ToggleButtonGroup,
   ToggleButtonGroupProps,
+  Typography,
 } from "@mui/material";
 import moment from "moment-timezone";
-import { MouseEvent, useCallback, useEffect, useMemo, useRef } from "react";
+import { MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { makeStyles } from "tss-react/mui";
 
 import { filterMap } from "@lichtblick/den/collection";
 import { AppSetting } from "@lichtblick/suite-base/AppSetting";
 import OsContextSingleton from "@lichtblick/suite-base/OsContextSingleton";
+import CopyButton from "@lichtblick/suite-base/components/CopyButton";
 import Stack from "@lichtblick/suite-base/components/Stack";
 import { useAppTimeFormat } from "@lichtblick/suite-base/hooks";
 import { useAppConfigurationValue } from "@lichtblick/suite-base/hooks/useAppConfigurationValue";
@@ -393,6 +396,132 @@ export function RosPackagePath(): React.ReactElement {
   );
 }
 
+// suite-base must not import from suite-desktop, so the fallback port is duplicated here.
+// Keep in sync with DEFAULT_MCP_PORT in packages/suite-desktop/src/main/mcp/McpServer.ts.
+const DEFAULT_MCP_PORT = 7333;
+
+/** Structural slice of the desktop preload bridge, mirroring `Desktop.updateMcpServer`. */
+type McpServerState = {
+  enabled: boolean;
+  port: number;
+  token: string;
+  /** Whether the HTTP socket is actually bound — `enabled` is only the setting. */
+  listening: boolean;
+};
+
+type McpBridge = {
+  updateMcpServer(options?: { regenerateToken?: boolean }): Promise<McpServerState>;
+};
+
+export function McpServerSettings(): React.ReactElement | null {
+  const { t } = useTranslation("appSettings");
+  const desktopBridge = (global as { desktopBridge?: McpBridge }).desktopBridge;
+  const [enabled = false, setEnabled] = useAppConfigurationValue<boolean>(AppSetting.MCP_ENABLED);
+  const [tokenFromSettings] = useAppConfigurationValue<string>(AppSetting.MCP_TOKEN);
+  const [portFromSettings] = useAppConfigurationValue<number>(AppSetting.MCP_PORT);
+
+  // Main-process writes (first-enable token generation, regeneration) never propagate back to
+  // this process, so values returned from updateMcpServer are overlaid on the settings-derived
+  // display state. The checkbox itself always follows the setting — this renderer is the sole
+  // writer of MCP_ENABLED, so the hook value is at least as fresh as any overlay and cannot be
+  // masked by a stale async reply.
+  const [refreshed, setRefreshed] = useState<McpServerState>();
+
+  if (desktopBridge == undefined) {
+    return null;
+  }
+
+  const isEnabled = enabled;
+  const port = refreshed?.port ?? portFromSettings ?? DEFAULT_MCP_PORT;
+  const token = refreshed?.token ?? tokenFromSettings ?? "";
+  const mcpUrl = `http://127.0.0.1:${port}/mcp`;
+  const claudeCodeSnippet = `claude mcp add --transport http lichtblick ${mcpUrl} --header "Authorization: Bearer ${token}"`;
+  const claudeDesktopSnippet = `npx mcp-remote ${mcpUrl} --header "Authorization: Bearer ${token}"`;
+  // ponytail: listening truth is last-interaction truth (no push channel); a boot-time port
+  // conflict shows as listening until the first toggle/regenerate reports it.
+  const statusText = !isEnabled
+    ? t("mcpStatusOff")
+    : refreshed?.listening === false
+      ? t("mcpStatusFailed", { port })
+      : t("mcpStatusListening", { port });
+
+  const handleRegenerate = async () => {
+    try {
+      setRefreshed(await desktopBridge.updateMcpServer({ regenerateToken: true }));
+    } catch (error) {
+      reportError(error as Error);
+    }
+  };
+
+  // The toggle is the single restart trigger and consumes the returned state — without this the
+  // token main generates on FIRST enable (settings write, no cross-process propagation) would
+  // never reach the display until Regenerate or app restart.
+  const handleEnableChange = async ({ enabled: next }: { enabled: boolean }) => {
+    try {
+      await setEnabled(next);
+      setRefreshed(await desktopBridge.updateMcpServer());
+    } catch (error) {
+      reportError(error as Error);
+    }
+  };
+
+  return (
+    <Stack testId="mcp-settings" gap={1}>
+      <FormLabel>{t("agentsMcp")}:</FormLabel>
+      <FormControlLabel
+        control={
+          <Checkbox
+            checked={isEnabled}
+            onChange={(_event, checked) => {
+              void handleEnableChange({ enabled: checked });
+            }}
+          />
+        }
+        label={t("mcpEnable")}
+      />
+      <Typography variant="body2">{statusText}</Typography>
+      <Stack direction="row" alignItems="center" gap={1}>
+        <TextField
+          fullWidth
+          size="small"
+          label={t("mcpTokenLabel")}
+          value={token}
+          slotProps={{ input: { readOnly: true } }}
+        />
+        <CopyButton size="small" getText={() => token} aria-label={t("mcpCopyToken")} />
+        <Button size="small" variant="outlined" onClick={() => void handleRegenerate()}>
+          {t("mcpRegenerateToken")}
+        </Button>
+      </Stack>
+      <Typography variant="body2">{t("mcpConnectAgent")}:</Typography>
+      <Stack direction="row" alignItems="center" gap={1}>
+        <TextField
+          fullWidth
+          size="small"
+          label={t("mcpClaudeCode")}
+          value={claudeCodeSnippet}
+          slotProps={{ input: { readOnly: true } }}
+        />
+        <CopyButton size="small" getText={() => claudeCodeSnippet} aria-label={t("mcpCopySnippet")} />
+      </Stack>
+      <Stack direction="row" alignItems="center" gap={1}>
+        <TextField
+          fullWidth
+          size="small"
+          label={t("mcpClaudeDesktop")}
+          value={claudeDesktopSnippet}
+          slotProps={{ input: { readOnly: true } }}
+        />
+        <CopyButton
+          size="small"
+          getText={() => claudeDesktopSnippet}
+          aria-label={t("mcpCopySnippet")}
+        />
+      </Stack>
+    </Stack>
+  );
+}
+
 export function LanguageSettings(): React.ReactElement {
   const { t, i18n } = useTranslation("appSettings");
   const [selectedLanguage = "en", setSelectedLanguage] = useAppConfigurationValue<Language>(
@@ -429,6 +558,35 @@ export function LanguageSettings(): React.ReactElement {
           </MenuItem>
         ))}
       </Select>
+    </Stack>
+  );
+}
+
+export function LayoutSyncSettings(): React.ReactElement {
+  const [workspace = "", setWorkspace] = useAppConfigurationValue<string>(
+    AppSetting.LAYOUT_SYNC_WORKSPACE,
+  );
+  const [token = "", setToken] = useAppConfigurationValue<string>(AppSetting.LAYOUT_SYNC_API_TOKEN);
+
+  return (
+    <Stack gap={1}>
+      <TextField
+        fullWidth
+        label="Layout sync workspace"
+        placeholder="default"
+        value={workspace}
+        onChange={(event) => void setWorkspace(event.target.value)}
+      />
+      <TextField
+        fullWidth
+        label="Layout sync API token (PAT)"
+        placeholder="xs_pat_…"
+        value={token}
+        onChange={(event) => void setToken(event.target.value)}
+      />
+      <Typography variant="inherit" color="text.secondary">
+        Workspace applies after restart; the token applies immediately.
+      </Typography>
     </Stack>
   );
 }

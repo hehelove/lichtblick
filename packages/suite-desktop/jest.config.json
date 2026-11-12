@@ -3,7 +3,12 @@
   "transform": {
     "\\.[jt]sx?$": ["babel-jest", { "rootMode": "upward" }]
   },
-  "//": "Native find is slow because it does not exclude files: https://github.com/facebook/jest/pull/11264#issuecomment-825377579",
+  "//": "transformIgnorePatterns enables transpilation of node_modules to support ESM-only packages (e.g. lodash-es pulled in via suite-base components); moduleNameMapper maps both suite-base specifier styles onto the source tree so renderer-style imports (webpack alias form) and main-style imports (/src form) share one module instance. JSON keeps only the last duplicate key, so all comments live here. haste: native find is slow because it does not exclude files: https://github.com/facebook/jest/pull/11264#issuecomment-825377579",
+  "transformIgnorePatterns": [],
+  "moduleNameMapper": {
+    "^@lichtblick/suite-base/src/(.*)$": "<rootDir>/../suite-base/src/$1",
+    "^@lichtblick/suite-base/(.*)$": "<rootDir>/../suite-base/src/$1"
+  },
   "haste": { "forceNodeFilesystemAPI": true },
   "setupFilesAfterEnv": ["<rootDir>/src/test/setup.ts"]
 }

@@ -31,6 +31,7 @@ import {
   PlotBounds,
   Scale,
   UpdateAction,
+  YScale,
   ZoomableChart,
 } from "./types";
 
@@ -294,7 +295,7 @@ export class ChartRenderer {
     return out;
   }
 
-  public updateDatasets(datasets: Dataset[]): Scale | undefined {
+  public updateDatasets(datasets: Dataset[]): { x?: Scale; y?: YScale } {
     this.#chartInstance.data.datasets = datasets;
 
     // While the chartjs API doesn't indicate update should be called after resize, in practice
@@ -303,7 +304,7 @@ export class ChartRenderer {
     // NOTE: "none" disables animations - this is important for chart performance because we update
     // the entire data set which does not preserve history for the chart animations
     this.#chartInstance.update("none");
-    return this.#getXScale();
+    return { x: this.#getXScale(), y: this.#getYScale() };
   }
 
   #getXScale(): Scale | undefined {
@@ -317,6 +318,20 @@ export class ChartRenderer {
       max: xScale.max,
       left: xScale.left,
       right: xScale.right,
+    };
+  }
+
+  #getYScale(): YScale | undefined {
+    const yScale = this.#chartInstance.scales.y;
+    if (!yScale) {
+      return undefined;
+    }
+
+    return {
+      min: yScale.min,
+      max: yScale.max,
+      top: yScale.top,
+      bottom: yScale.bottom,
     };
   }
 

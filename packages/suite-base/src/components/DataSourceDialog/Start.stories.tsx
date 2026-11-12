@@ -26,6 +26,9 @@ const Wrapper = (Story: StoryFn): React.JSX.Element => {
       <WorkspaceContextProvider
         initialState={{
           dialogs: {
+            commandPalette: {
+              open: false,
+            },
             dataSource: {
               activeDataSource: undefined,
               item: "start",

@@ -37,3 +37,13 @@ export function addFoxgloveSchema(output: Set<string>, dataType: string): Set<st
 // and the player-side seek backfill.
 export const COMPRESSED_VIDEO_DATATYPES = new Set<string>();
 addFoxgloveSchema(COMPRESSED_VIDEO_DATATYPES, "foxglove.CompressedVideo");
+
+// Schema names (all encoding variations) for `foxglove.RawAudio`, consumed by the Audio panel.
+export const RAW_AUDIO_DATATYPES = new Set<string>();
+addFoxgloveSchema(RAW_AUDIO_DATATYPES, "foxglove.RawAudio");
+
+// Schema names (all encoding variations) for `foxglove.CompressedAudio`, consumed by the Audio
+// panel. Note: an `audio_common_msgs`→RawAudio builtin converter is intentionally not provided
+// (the info bit-layout is unverified against the ROS package).
+export const COMPRESSED_AUDIO_DATATYPES = new Set<string>();
+addFoxgloveSchema(COMPRESSED_AUDIO_DATATYPES, "foxglove.CompressedAudio");

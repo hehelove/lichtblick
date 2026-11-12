@@ -17,6 +17,7 @@ import { EventEmitter } from "eventemitter3";
 
 import Log from "@lichtblick/log";
 import { globalRequestQueue } from "@lichtblick/suite-base/util/RequestQueue";
+import { responseErrorMessage } from "@lichtblick/suite-base/util/errors";
 
 const log = Log.getLogger(__filename);
 
@@ -62,7 +63,10 @@ export default class FetchReader extends EventEmitter<EventTypes> {
       this.emit(
         "error",
         new Error(
-          `GET <$${this.#url}> failed with status ${data.status}${errMsg ? ` (${errMsg})` : ``}`,
+          responseErrorMessage(
+            data,
+            `GET <$${this.#url}> failed with status ${data.status}${errMsg ? ` (${errMsg})` : ``}`,
+          ),
         ),
       );
       return undefined;

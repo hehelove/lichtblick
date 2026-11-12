@@ -24,6 +24,7 @@ export type PlotPath = BasePlotPath & {
   label?: string;
   timestampMethod: TimestampMethod;
   showLine?: boolean;
+  stepped?: boolean;
   lineSize?: number;
   yAxisID?: "y" | "y1";
   dynamicLabelField?: string;

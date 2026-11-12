@@ -114,6 +114,17 @@ describe("FrameAxes", () => {
     (console.warn as jest.Mock).mockClear();
   });
 
+  it("保留障碍物动画TF供插值，但隐藏其坐标轴和选项", () => {
+    renderer.addCoordinateFrame("world");
+    renderer.addCoordinateFrame("obstf/42");
+    const frameAxes = renderer.sceneExtensions.get("foxglove.FrameAxes") as FrameAxes;
+    expect(renderer.transformTree.frame("obstf/42")).toBeDefined();
+    expect(renderer.coordinateFrameList.map((entry) => entry.value)).toContain("world");
+    expect(renderer.coordinateFrameList.map((entry) => entry.value)).not.toContain("obstf/42");
+    expect(frameAxes.renderables.has("obstf/42")).toBe(false);
+    expect(frameAxes.renderables.has("world")).toBe(true);
+  });
+
   describe("details()", () => {
     it("returns frame details with parent and fixed frame", () => {
       // Given: A frame with a parent

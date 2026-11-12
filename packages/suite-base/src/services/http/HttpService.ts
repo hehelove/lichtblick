@@ -21,6 +21,7 @@ export class HttpService {
   private readonly apiVersion = "1.0";
   private readonly baseURL?: string;
   private readonly defaultOptions: RequestInit;
+  private authToken?: string;
 
   public constructor() {
     this.baseURL = APP_CONFIG.apiUrl;
@@ -32,6 +33,12 @@ export class HttpService {
     };
   }
 
+  // PAT Bearer（desktop 布局同步）；web 同源 cookie 场景恒为 undefined。
+  // 单例在模块加载即构造（baseURL 是构建期常量），token 只能运行时注入。
+  public setAuthToken(token: string | undefined): void {
+    this.authToken = token;
+  }
+
   private async request<T>(
     endpoint: string,
     options: HttpRequestOptions = {},
@@ -40,18 +47,22 @@ export class HttpService {
     const url = this.baseURL ? `${this.baseURL}/${endpoint}` : endpoint;
     const shouldUseDefaultHeaders = !(fetchOptions.body instanceof FormData);
 
+    const headers: Record<string, string> = shouldUseDefaultHeaders
+      ? {
+          ...(this.defaultOptions.headers as Record<string, string>),
+          ...(fetchOptions.headers as Record<string, string>),
+        }
+      : {
+          "Api-Version": this.apiVersion,
+          ...(fetchOptions.headers as Record<string, string>),
+        };
+    if (this.authToken != undefined && this.authToken.length > 0 && headers["Authorization"] == undefined) {
+      headers["Authorization"] = `Bearer ${this.authToken}`;
+    }
     const requestOptions: RequestInit = {
       ...fetchOptions,
       credentials: "same-origin", // Include cookies in requests
-      headers: shouldUseDefaultHeaders
-        ? {
-            ...(this.defaultOptions.headers as Record<string, string>),
-            ...(fetchOptions.headers as Record<string, string>),
-          }
-        : {
-            "Api-Version": this.apiVersion,
-            ...(fetchOptions.headers as Record<string, string>),
-          },
+      headers,
     };
 
     let response: Response;

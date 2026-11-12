@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   App,
   AppSetting,
+  CompareFilesDataSourceFactory,
   FoxgloveWebSocketDataSourceFactory,
   IAppConfiguration,
   IDataSourceFactory,
@@ -26,6 +27,8 @@ import {
   VelodyneDataSourceFactory,
 } from "@lichtblick/suite-base";
 
+import McpCommandBridge from "./McpCommandBridge";
+import McpStateBridge from "./McpStateBridge";
 import { DesktopExtensionLoader } from "./services/DesktopExtensionLoader";
 import { DesktopLayoutLoader } from "./services/DesktopLayoutLoader";
 import { NativeAppMenu } from "./services/NativeAppMenu";
@@ -96,6 +99,7 @@ export default function Root(props: RootProps): React.JSX.Element {
       new VelodyneDataSourceFactory(),
       new SampleNuscenesDataSourceFactory(),
       new McapLocalDataSourceFactory(),
+      new CompareFilesDataSourceFactory(),
       new RemoteDataSourceFactory(),
     ];
 
@@ -171,6 +175,12 @@ export default function Root(props: RootProps): React.JSX.Element {
       onUnmaximizeWindow={onUnmaximizeWindow}
       onCloseWindow={onCloseWindow}
       extraProviders={extraProviders}
+      pipelineAdapters={
+        <>
+          <McpStateBridge />
+          <McpCommandBridge />
+        </>
+      }
     />
   );
 }

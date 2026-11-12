@@ -6,6 +6,7 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/
 
 import { Divider, Typography } from "@mui/material";
+import { useTranslation } from "react-i18next";
 import { makeStyles } from "tss-react/mui";
 
 import CopyButton from "@lichtblick/suite-base/components/CopyButton";
@@ -20,51 +21,63 @@ import PanelToolbar from "@lichtblick/suite-base/components/PanelToolbar";
 import Stack from "@lichtblick/suite-base/components/Stack";
 import { Topic } from "@lichtblick/suite-base/src/players/types";
 
-const useStyles = makeStyles<void, "copyIcon">()((theme, _params, classes) => ({
-  copyIcon: {
-    visibility: "hidden",
+const useStyles = makeStyles<void, "copyIcon" | "metadataJson" | "metadataSection">()(
+  (theme, _params, classes) => ({
+    copyIcon: {
+      visibility: "hidden",
 
-    "&:hover": {
-      backgroundColor: "transparent",
-    },
-  },
-  table: {
-    borderCollapse: "collapse",
-    display: "block",
-    flex: 1,
-
-    thead: {
-      position: "sticky",
-      textAlign: "left",
-      top: 0,
-      zIndex: theme.zIndex.appBar - 1,
-    },
-
-    tr: {
       "&:hover": {
+        backgroundColor: "transparent",
+      },
+    },
+    metadataSection: {
+      padding: theme.spacing(1, 1.5),
+    },
+
+    metadataJson: {
+      display: "block",
+      fontFamily: "monospace",
+      whiteSpace: "pre-wrap",
+      wordBreak: "break-all",
+    },
+    table: {
+      borderCollapse: "collapse",
+      display: "block",
+      flex: 1,
+
+      thead: {
+        position: "sticky",
+        textAlign: "left",
+        top: 0,
+        zIndex: theme.zIndex.appBar - 1,
+      },
+
+      tr: {
+        "&:hover": {
+          backgroundColor: theme.palette.background.paper,
+        },
+      },
+
+      th: {
         backgroundColor: theme.palette.background.paper,
+        paddingBlock: theme.spacing(1),
+        paddingInline: theme.spacing(1.5),
+        whiteSpace: "nowrap",
+        width: "100%",
+      },
+
+      td: {
+        paddingBlock: theme.spacing(0.25),
+        paddingInline: theme.spacing(1.5),
+        whiteSpace: "nowrap",
+
+        [`&:hover .${classes.copyIcon}`]: {
+          visibility: "visible",
+        },
       },
     },
-
-    th: {
-      backgroundColor: theme.palette.background.paper,
-      paddingBlock: theme.spacing(1),
-      paddingInline: theme.spacing(1.5),
-      whiteSpace: "nowrap",
-      width: "100%",
-    },
-
-    td: {
-      paddingBlock: theme.spacing(0.25),
-      paddingInline: theme.spacing(1.5),
-      whiteSpace: "nowrap",
-
-      [`&:hover .${classes.copyIcon}`]: {
-        visibility: "visible",
-      },
-    },
-  },
-}));
+  }),
+);
 
 function TopicRow({ topic }: { topic: Topic }): React.JSX.Element {
   const { classes } = useStyles();
@@ -115,15 +128,19 @@ function TopicRow({ topic }: { topic: Topic }): React.JSX.Element {
 const selectSortedTopics = (ctx: MessagePipelineContext) => ctx.sortedTopics;
 const selectStartTime = (ctx: MessagePipelineContext) => ctx.playerState.activeData?.startTime;
 const selectEndTime = (ctx: MessagePipelineContext) => ctx.playerState.activeData?.endTime;
+const selectGetMetadata = (ctx: MessagePipelineContext) => ctx.getMetadata;
 
 const MemoTopicRow = React.memo(TopicRow);
 
 function SourceInfo(): React.JSX.Element {
   const { classes } = useStyles();
+  const { t } = useTranslation("dataSourceInfo");
 
   const topics = useMessagePipeline(selectSortedTopics);
   const startTime = useMessagePipeline(selectStartTime);
   const endTime = useMessagePipeline(selectEndTime);
+  const getMetadata = useMessagePipeline(selectGetMetadata);
+  const metadata = getMetadata();
 
   if (!startTime || !endTime) {
     return (
@@ -154,6 +171,23 @@ function SourceInfo(): React.JSX.Element {
             ))}
           </tbody>
         </table>
+        {metadata.length > 0 && (
+          <details className={classes.metadataSection}>
+            <summary>
+              <Typography component="span" variant="overline">
+                {t("metadataRecords")}
+              </Typography>
+            </summary>
+            {metadata.map((record, index) => (
+              <div key={`${record.name}-${index}`}>
+                <Typography variant="body2">{record.name}</Typography>
+                <span className={classes.metadataJson}>
+                  {JSON.stringify(record.metadata)}
+                </span>
+              </div>
+            ))}
+          </details>
+        )}
         <DirectTopicStatsUpdater interval={6} />
       </Stack>
     </>

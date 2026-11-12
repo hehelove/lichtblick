@@ -22,8 +22,9 @@ import { useSnackbar } from "notistack";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 
-import { SettingsTreeAction } from "@lichtblick/suite";
+import { SettingsTreeAction, Time } from "@lichtblick/suite";
 import { useDataSourceInfo, useMessagesByTopic } from "@lichtblick/suite-base/PanelAPI";
+import { useMessagePipelineGetter } from "@lichtblick/suite-base/components/MessagePipeline";
 import Panel from "@lichtblick/suite-base/components/Panel";
 import PanelToolbar from "@lichtblick/suite-base/components/PanelToolbar";
 import ToolbarIconButton from "@lichtblick/suite-base/components/PanelToolbar/ToolbarIconButton";
@@ -214,6 +215,14 @@ const LogPanel = React.memo(({ config, saveConfig }: Props) => {
 
   const { timeZone } = useAppTimeFormat();
 
+  const getMessagePipeline = useMessagePipelineGetter();
+  const onSeekStamp = useCallback(
+    (stamp: Time) => {
+      getMessagePipeline().seekPlayback?.(stamp);
+    },
+    [getMessagePipeline],
+  );
+
   const handleCopy = useCallback(async () => {
     const messagesToCopy: string[] = formatMessages(normalizedMessages, timeZone);
     if (messagesToCopy.length === 0) {
@@ -247,7 +256,7 @@ const LogPanel = React.memo(({ config, saveConfig }: Props) => {
       </Stack>
       <Divider />
       <Stack flexGrow={1}>
-        <LogList items={normalizedMessages} />
+        <LogList items={normalizedMessages} onSeek={onSeekStamp} />
       </Stack>
     </Stack>
   );

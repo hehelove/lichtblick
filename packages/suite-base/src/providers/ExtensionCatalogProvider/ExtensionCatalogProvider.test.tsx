@@ -10,6 +10,7 @@ import { useEffect } from "react";
 
 import { ExtensionPanelRegistration, PanelSettings } from "@lichtblick/suite";
 import { useConfigById } from "@lichtblick/suite-base/PanelAPI";
+import { builtinMessageConverters } from "@lichtblick/suite-base/builtins/converters";
 import Panel from "@lichtblick/suite-base/components/Panel";
 import {
   ContributionPoints,
@@ -229,8 +230,9 @@ describe("ExtensionCatalogProvider", () => {
     await waitFor(() => {
       expect(loadExtension).toHaveBeenCalledTimes(1);
     });
-    expect(result.current.installedMessageConverters?.length).toEqual(1);
+    expect(result.current.installedMessageConverters?.length).toEqual(2);
     expect(result.current.installedMessageConverters).toEqual([
+      ...builtinMessageConverters,
       {
         converter: expect.any(Function),
         extensionId: expect.any(String),
@@ -278,8 +280,9 @@ describe("ExtensionCatalogProvider", () => {
     await waitFor(() => {
       expect(loadExtension).toHaveBeenCalledTimes(1);
     });
-    expect(result.current.installedMessageConverters?.length).toBe(2);
+    expect(result.current.installedMessageConverters?.length).toBe(3);
     expect(result.current.installedMessageConverters).toEqual([
+      ...builtinMessageConverters,
       {
         converter: expect.any(Function),
         extensionId: expect.any(String),
@@ -649,7 +652,8 @@ describe("ExtensionCatalogProvider", () => {
       expect(result.current.isExtensionInstalled(extensionInfo.id)).toBe(false);
       expect(result.current.installedExtensions?.length).toBe(0);
       expect(result.current.installedPanels).toEqual({});
-      expect(result.current.installedMessageConverters?.length).toBe(0);
+      // Built-in converters are not tied to an extension and survive uninstallation.
+      expect(result.current.installedMessageConverters).toEqual(builtinMessageConverters);
       expect(result.current.installedTopicAliasFunctions?.length).toBe(0);
       expect(result.current.installedCameraModels.size).toBe(0);
     });
@@ -906,8 +910,10 @@ describe("ExtensionCatalogProvider", () => {
       expect(result.current.installedExtensions).toContainEqual(
         expect.objectContaining({ id: extensionInfo.id }),
       );
-      expect(result.current.installedMessageConverters).toHaveLength(1);
-      expect(result.current.installedMessageConverters![0]).toEqual({
+      expect(result.current.installedMessageConverters).toHaveLength(1 + builtinMessageConverters.length);
+      expect(
+        result.current.installedMessageConverters![builtinMessageConverters.length],
+      ).toEqual({
         ...messageConverter,
         converter: expect.any(Function),
       });

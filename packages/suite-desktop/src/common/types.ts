@@ -5,6 +5,27 @@
 // License, v2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/
 
+/**
+ * Mirror of the PlayerPresence enum (suite-base/src/players/types.ts) as a literal union so the
+ * main/preload tsc projects don't pull the suite-base source graph. Assigning the real enum in
+ * the renderer (McpStateBridge) fails to compile if the values ever drift.
+ */
+export type PlayerPresence =
+  | "NOT_PRESENT"
+  | "INITIALIZING"
+  | "RECONNECTING"
+  | "BUFFERING"
+  | "PRESENT"
+  | "ERROR";
+
+/** Player/topic state pushed from the renderer to the main process for MCP tools */
+export type McpStateSnapshot = {
+  presence: PlayerPresence;
+  playerName: string | undefined;
+  topics: { name: string; schemaName: string | undefined; aliasedFromName?: string }[];
+  datatypes: Record<string, unknown>;
+};
+
 // Events that are forwarded from the main process
 export type ForwardedMenuEvent =
   | "open"
@@ -133,6 +154,29 @@ interface Desktop {
 
   /** Notify the app that the language setting has been changed */
   updateLanguage(): void;
+
+  /**
+   * Restart the local MCP server to pick up changed settings, optionally regenerating and
+   * persisting the auth token first. Returns the post-update server state so the renderer can
+   * refresh its display (settings.json changes from the main process don't propagate to it).
+   * `listening` reports whether the HTTP socket is actually bound — `enabled` is only the
+   * setting, and start() deliberately swallows listen failures (e.g. a busy port).
+   */
+  updateMcpServer(options?: {
+    regenerateToken?: boolean;
+  }): Promise<{ enabled: boolean; port: number; token: string; listening: boolean }>;
+
+  /** Push the current player state snapshot to the main process for MCP tools */
+  sendMcpStateSnapshot(snapshot: McpStateSnapshot): void;
+
+  /**
+   * Register a handler for commands sent from the main process via the MCP bridge.
+   * Returns a function to remove the registered event handler.
+   */
+  onMcpCommand(handler: (msg: { id: number; type: string; payload: unknown }) => void): UnregisterFn;
+
+  /** Reply to a command received via onMcpCommand */
+  sendMcpResult(id: number, result: unknown): void;
 }
 
 export type { Desktop, DesktopExtension, DesktopLayout, NativeMenuBridge, Storage, StorageContent };

@@ -58,6 +58,11 @@ const makeSeriesNode = memoizeWeak(
           min: 0,
           placeholder: "auto",
         },
+        stepped: {
+          label: t("stepped"),
+          input: "boolean",
+          value: path.stepped ?? false,
+        },
         showLine: {
           input: "boolean",
           label: t("showLine"),

@@ -16,6 +16,7 @@
 
 import type { FileReader, FileStream } from "@lichtblick/suite-base/util/CachedFilelike.types";
 import FetchReader from "@lichtblick/suite-base/util/FetchReader";
+import { responseErrorMessage } from "@lichtblick/suite-base/util/errors";
 import isDesktopApp from "@lichtblick/suite-base/util/isDesktopApp";
 
 // A file reader that reads from a remote HTTP URL, for usage in the browser (not for node.js).
@@ -53,7 +54,10 @@ export default class BrowserHttpReader implements FileReader {
     }
     if (!response.ok) {
       throw new Error(
-        `Fetching remote file failed. <${this.#url}> Status code: ${response.status}.`,
+        responseErrorMessage(
+          response,
+          `Fetching remote file failed. <${this.#url}> Status code: ${response.status}.`,
+        ),
       );
     }
     if (response.headers.get("accept-ranges") !== "bytes") {

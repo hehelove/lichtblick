@@ -16,6 +16,22 @@ import {
 } from "@lichtblick/suite-base/players/IterablePlayer";
 import { Player } from "@lichtblick/suite-base/players/types";
 
+/** Builds the worker-backed ULog source shared by single-file open and comparison mode. */
+export function buildUlogSource(file: File): WorkerIterableSource {
+  return new WorkerIterableSource({
+    initWorker: () => {
+      return new Worker(
+        // foxglove-depcheck-used: babel-plugin-transform-import-meta
+        new URL(
+          "@lichtblick/suite-base/players/IterablePlayer/ulog/UlogIterableSourceWorker.worker",
+          import.meta.url,
+        ),
+      );
+    },
+    initArgs: { file },
+  });
+}
+
 class UlogLocalDataSourceFactory implements IDataSourceFactory {
   public id = "ulog-local-file";
   public type: IDataSourceFactory["type"] = "file";
@@ -29,18 +45,7 @@ class UlogLocalDataSourceFactory implements IDataSourceFactory {
       return;
     }
 
-    const source = new WorkerIterableSource({
-      initWorker: () => {
-        return new Worker(
-          // foxglove-depcheck-used: babel-plugin-transform-import-meta
-          new URL(
-            "@lichtblick/suite-base/players/IterablePlayer/ulog/UlogIterableSourceWorker.worker",
-            import.meta.url,
-          ),
-        );
-      },
-      initArgs: { file },
-    });
+    const source = buildUlogSource(file);
 
     return new IterablePlayer({
       metricsCollector: args.metricsCollector,

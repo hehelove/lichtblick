@@ -43,6 +43,8 @@ type PlaybackTimeDisplayMethodProps = {
   onSeek: (arg0: Time) => void;
   onPause: () => void;
   isPlaying: boolean;
+  /** False hides the SEC/TOD dropdown (comparison sessions force SEC). */
+  showFormatMenu?: boolean;
 };
 
 const useStyles = makeStyles<{ timeDisplayMethod: TimeDisplayMethod }>()(
@@ -192,6 +194,7 @@ export function UnconnectedPlaybackTimeDisplay({
   onSeek,
   onPause,
   isPlaying,
+  showFormatMenu,
 }: PlaybackTimeDisplayMethodProps): React.JSX.Element {
   const { classes, cx } = useStyles({ timeDisplayMethod: appTimeFormat.timeFormat });
   const timeOutID = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -281,18 +284,19 @@ export function UnconnectedPlaybackTimeDisplay({
             slotProps={{
               input: {
                 startAdornment: hasError ? <WarningIcon color="error" /> : undefined,
-                endAdornment: (
-                  <PlaybackTimeMethodMenu
-                    {...{
-                      currentTime,
-                      timezone,
-                      timeOfDayString,
-                      timeRawString,
-                      timeFormat: appTimeFormat.timeFormat,
-                      setTimeFormat: appTimeFormat.setTimeFormat,
-                    }}
-                  />
-                ),
+                endAdornment:
+                  showFormatMenu === false ? undefined : (
+                    <PlaybackTimeMethodMenu
+                      {...{
+                        currentTime,
+                        timezone,
+                        timeOfDayString,
+                        timeRawString,
+                        timeFormat: appTimeFormat.timeFormat,
+                        setTimeFormat: appTimeFormat.setTimeFormat,
+                      }}
+                    />
+                  ),
               },
             }}
             onFocus={(e) => {

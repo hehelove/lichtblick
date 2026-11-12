@@ -10,6 +10,7 @@ export const dataSourceInfo = {
   dataSource: "Data source",
   duration: "Duration",
   endTime: "End time",
+  metadataRecords: "Metadata records",
   startTime: "Start time",
   waitingForConnection: "Waiting for connection…",
 };

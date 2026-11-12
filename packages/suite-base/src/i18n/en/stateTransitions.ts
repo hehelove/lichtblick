@@ -7,12 +7,13 @@
 
 export const stateTransitions = {
   addSeriesButton: "Click to add a series",
+  delta: "Delta",
   labels: {
     addSeries: "Add series",
     axisLabel: "Axis label",
     deleteSeries: "Delete series",
     dynamicFieldsHelp:
-      "Object arrays are expanded automatically. Override these fields when their keys are not label and value.",
+      "Object arrays expand by label/value; entries without the label field (and primitive arrays) expand to one row per index, labeled [0], [1], …",
     dynamicLabelField: "Dynamic label field",
     dynamicValueField: "Dynamic value field",
     general: "General",
@@ -26,10 +27,14 @@ export const stateTransitions = {
     timestampHeaderStamp: "Header Stamp",
     timestampReceiveTime: "Receive Time",
   },
+  markerA: "P1",
+  markerB: "P2",
   max: "Max",
   maxXError: "X max must be greater than X min.",
+  measureMode: "Measure delta",
   min: "Min",
   pathErrorMessage: "This path resolves to more than one value",
   secondsRange: "Range (seconds)",
+  value: "Value",
   xAxis: "X Axis",
 };

@@ -5,7 +5,11 @@
 // License, v2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/
 
-import { MyLocation20Regular, Ruler20Filled, Ruler20Regular } from "@fluentui/react-icons";
+import {
+  MyLocation20Regular,
+  PointScan20Filled,
+  PointScan20Regular,
+} from "@fluentui/react-icons";
 import {
   Button,
   IconButton,
@@ -68,7 +72,7 @@ const useStyles = makeStyles()((theme) => ({
     pointerEvents: "auto",
     aspectRatio: "1/1",
   },
-  rulerIcon: {
+  pointScanIcon: {
     transform: "rotate(45deg)",
     display: "flex",
     justifyContent: "center",
@@ -161,7 +165,7 @@ function extractHoverMetadata(
 /**
  * Provides DOM overlay elements on top of the 3D scene (e.g. stats, debug GUI).
  */
-export function RendererOverlay(props: Props): React.JSX.Element {
+export function RendererOverlay(props: Readonly<Props>): React.JSX.Element {
   const { t } = useTranslation("threeDee");
   const { classes } = useStyles();
   const [clickedPosition, setClickedPosition] = useState<{ clientX: number; clientY: number }>({
@@ -334,7 +338,7 @@ export function RendererOverlay(props: Props): React.JSX.Element {
     renderer?.setSelectedRenderable(selectedRenderable);
   }, [renderer, selectedRenderable]);
 
-  const publickClickButtonRef = useRef<HTMLButtonElement>(ReactNull);
+  const publishClickButtonRef = useRef<HTMLButtonElement>(ReactNull);
   const [publishMenuExpanded, setPublishMenuExpanded] = useState(false);
   const selectedPublishClickIcon = PublishClickIcons[props.publishClickType];
 
@@ -359,7 +363,7 @@ export function RendererOverlay(props: Props): React.JSX.Element {
           className={classes.iconButton}
           size="small"
           color={props.publishActive ? "info" : "inherit"}
-          ref={publickClickButtonRef}
+          ref={publishClickButtonRef}
           onClick={props.onClickPublish}
           data-testid="publish-button"
         >
@@ -380,7 +384,7 @@ export function RendererOverlay(props: Props): React.JSX.Element {
       </Tooltip>
       <Menu
         id="publish-menu"
-        anchorEl={publickClickButtonRef.current}
+        anchorEl={publishClickButtonRef.current}
         anchorOrigin={{ vertical: "top", horizontal: "left" }}
         transformOrigin={{ vertical: "top", horizontal: "right" }}
         open={publishMenuExpanded}
@@ -503,8 +507,8 @@ export function RendererOverlay(props: Props): React.JSX.Element {
                 color={props.measureActive ? "info" : "inherit"}
                 onClick={props.onClickMeasure}
               >
-                <div className={classes.rulerIcon}>
-                  {props.measureActive ? <Ruler20Filled /> : <Ruler20Regular />}
+                <div className={classes.pointScanIcon}>
+                  {props.measureActive ? <PointScan20Filled /> : <PointScan20Regular />}
                 </div>
               </IconButton>
             </Tooltip>

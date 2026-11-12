@@ -163,8 +163,23 @@ export function fillInGlobalVariablesInPath(
   rosPath: MessagePath,
   globalVariables: GlobalVariables,
 ): MessagePath {
+  // Resolve a modifier operand (`.@mul($scale)`) to a plain number: variables come from
+  // globalVariables (non-numeric ones resolve to undefined), BigInts are normalized to numbers.
+  let modifierOperand = rosPath.modifierOperand;
+  if (modifierOperand != undefined) {
+    let value: number | undefined;
+    if (typeof modifierOperand.value === "object") {
+      const num = Number(globalVariables[modifierOperand.value.variableName]);
+      value = isNaN(num) ? undefined : num;
+    } else {
+      value = Number(modifierOperand.value);
+    }
+    modifierOperand = { ...modifierOperand, value };
+  }
+
   return {
     ...rosPath,
+    modifierOperand,
     messagePath: rosPath.messagePath.map((messagePathPart) => {
       if (messagePathPart.type === "slice") {
         const start =

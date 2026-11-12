@@ -80,21 +80,28 @@ export function resolveChartDatum(
   item: unknown,
   mathFunction?: MathFunction,
 ): ChartDatum | undefined {
-  if (!isChartValue(item)) {
-    return undefined;
-  }
   // eslint-disable-next-line @lichtblick/strict-equality
   if (item === null) {
+    // A null item is a gap: the math function never sees it.
     return { y: Number.NaN, value: null };
+  }
+  // xs: local math functions (@yaw/@ypr/@norm, …) consume the raw item — e.g. a
+  // quaternion object — rather than the pre-converted number, so they run before
+  // the scalar gate and their numeric output is the datum itself.
+  if (mathFunction) {
+    const y = mathFunction(item);
+    return { y, value: y };
+  }
+  if (!isChartValue(item)) {
+    return undefined;
   }
   const chartValue = getChartValue(item);
   if (chartValue == undefined) {
     return undefined;
   }
 
-  const y = mathFunction ? mathFunction(chartValue) : chartValue;
   if (Number.isNaN(chartValue)) {
-    return { y, value: null };
+    return { y: chartValue, value: null };
   }
-  return { y, value: mathFunction ? y : item };
+  return { y: chartValue, value: item };
 }

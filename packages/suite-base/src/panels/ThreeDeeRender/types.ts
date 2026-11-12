@@ -9,6 +9,7 @@ import { DeepPartial } from "ts-essentials";
 
 import { CameraModelsMap } from "@lichtblick/den/image/types";
 import { useCrash } from "@lichtblick/hooks";
+import type { Metadata } from "@lichtblick/suite";
 import { ForwardedAnalytics } from "@lichtblick/suite-base/components/ForwardAnalyticsContextProvider";
 import { BuiltinPanelExtensionContext } from "@lichtblick/suite-base/components/PanelExtensionAdapter";
 import { FollowMode, TestOptions } from "@lichtblick/suite-base/panels/ThreeDeeRender/IRenderer";
@@ -37,6 +38,15 @@ export type ThreeDeeRenderProps = {
   ) => void;
   /** Allow for logging errors to panel logs */
   logError?: (message: string, error?: Error) => void;
+  /**
+   * Mosaic panel id/title, threaded from PanelContext for the video-export canvas
+   * registry (PanelContext itself is not visible inside the sync root).
+   */
+  panelId?: string;
+  panelTitle?: string;
+  /** Read player file metadata (MCAP color-correction records). Threaded from the
+   * main tree because the MessagePipeline context is not visible inside the sync root. */
+  getMetadata: () => ReadonlyArray<Readonly<Metadata>>;
 };
 
 export type InitPanelArgs = {
@@ -51,4 +61,9 @@ export type InitPanelArgs = {
     variant?: "default" | "error" | "success" | "warning" | "info",
   ) => void;
   logError?: (message: string, error?: Error) => void;
+  panelId?: string;
+  panelTitle?: string;
+  /** Read player file metadata (MCAP color-correction records). Threaded from the
+   * main tree because the MessagePipeline context is not visible inside the sync root. */
+  getMetadata: () => ReadonlyArray<Readonly<Metadata>>;
 };

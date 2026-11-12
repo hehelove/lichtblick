@@ -9,9 +9,12 @@ import { Fragment, Suspense, useEffect, useMemo } from "react";
 import { DndProvider } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
 
+import { AppSetting } from "@lichtblick/suite-base/AppSetting";
 import { IdbLayoutStorage } from "@lichtblick/suite-base/IdbLayoutStorage";
 import { LayoutsAPI } from "@lichtblick/suite-base/api/layouts/LayoutsAPI";
+import { resolveLayoutSyncWorkspace } from "@lichtblick/suite-base/api/layouts/workspace";
 import { APP_CONFIG } from "@lichtblick/suite-base/constants/config";
+import { useAppConfiguration } from "@lichtblick/suite-base/context/AppConfigurationContext";
 import LayoutStorageContext from "@lichtblick/suite-base/context/LayoutStorageContext";
 import NativeAppMenuContext from "@lichtblick/suite-base/context/NativeAppMenuContext";
 import NativeWindowContext from "@lichtblick/suite-base/context/NativeWindowContext";
@@ -23,6 +26,7 @@ import LayoutManagerProvider from "@lichtblick/suite-base/providers/LayoutManage
 import { StudioLogsSettingsProvider } from "@lichtblick/suite-base/providers/StudioLogsSettingsProvider";
 import TimelineInteractionStateProvider from "@lichtblick/suite-base/providers/TimelineInteractionStateProvider";
 import UserProfileLocalStorageProvider from "@lichtblick/suite-base/providers/UserProfileLocalStorageProvider";
+import HttpService from "@lichtblick/suite-base/services/http/HttpService";
 
 import Workspace from "./Workspace";
 import DocumentTitleAdapter from "./components/DocumentTitleAdapter";
@@ -73,10 +77,6 @@ export function StudioApp(): React.JSX.Element {
     /* eslint-enable react/jsx-key */
   ];
 
-  if (extraProviders) {
-    providers.unshift(...extraProviders);
-  }
-
   if (nativeAppMenu) {
     providers.push(<NativeAppMenuContext.Provider value={nativeAppMenu} />);
   }
@@ -95,13 +95,32 @@ export function StudioApp(): React.JSX.Element {
   providers.unshift(<UserProfileLocalStorageProvider />);
   providers.unshift(<LayoutManagerProvider />);
 
+  const appConfiguration = useAppConfiguration();
   const layoutStorage = useMemo(() => new IdbLayoutStorage(), []);
 
   providers.unshift(<LayoutStorageContext.Provider value={layoutStorage} />);
   const MaybeLaunchPreference = enableLaunchPreferenceScreen === true ? LaunchPreference : Fragment;
 
   const url = new URL(window.location.href);
-  const workspace = url.searchParams.get("workspace");
+  const workspace = resolveLayoutSyncWorkspace(url.searchParams.get("workspace"), appConfiguration);
+
+  // PAT Bearer 注入（desktop）：设置面板改动即时生效（监听配置变化），无需重启。
+  useEffect(() => {
+    const applyToken = (value: string | number | boolean | undefined): void => {
+      HttpService.setAuthToken(typeof value === "string" && value.length > 0 ? value : undefined);
+    };
+    applyToken(appConfiguration.get(AppSetting.LAYOUT_SYNC_API_TOKEN));
+    appConfiguration.addChangeListener(AppSetting.LAYOUT_SYNC_API_TOKEN, applyToken);
+    return () => {
+      appConfiguration.removeChangeListener(AppSetting.LAYOUT_SYNC_API_TOKEN, applyToken);
+    };
+  }, [appConfiguration]);
+
+  // 渲染期同步注入：子组件 effect 先于本组件 effect 执行，首同步必须已带上 PAT。
+  const layoutSyncToken = appConfiguration.get(AppSetting.LAYOUT_SYNC_API_TOKEN);
+  HttpService.setAuthToken(
+    typeof layoutSyncToken === "string" && layoutSyncToken.length > 0 ? layoutSyncToken : undefined,
+  );
 
   const remoteLayoutStorage = useMemo(() => {
     if (workspace && APP_CONFIG.apiUrl) {
@@ -112,6 +131,12 @@ export function StudioApp(): React.JSX.Element {
 
   if (remoteLayoutStorage) {
     providers.unshift(<RemoteLayoutStorageContext.Provider value={remoteLayoutStorage} />);
+  }
+
+  if (extraProviders) {
+    // Providers supplying context consumed by providers above them in this list must stay outermost,
+    // otherwise those consumers silently fall back to the context default (for example analytics).
+    providers.unshift(...extraProviders);
   }
 
   useEffect(() => {

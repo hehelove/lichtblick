@@ -111,7 +111,7 @@ export class CustomDatasetsBuilder implements IDatasetsBuilder {
         staticSeries,
         { didSeek, hasRangeSource: this.#hasRangeSource },
         (config) => {
-          const mathFn = getMathFunction(config.parsed.modifier);
+          const mathFn = getMathFunction(config.parsed.modifier, Number(config.parsed.modifierOperand?.value));
           return readMessagePathItems(msgEvents, config.parsed, mathFn);
         },
       );
@@ -174,7 +174,7 @@ export class CustomDatasetsBuilder implements IDatasetsBuilder {
 
     const staticSeries = this.#series.filter(({ config }) => !isDynamicSeries(config));
     const actions = buildFullSeriesActions(staticSeries, topic, options, (config) => {
-      const mathFn = getMathFunction(config.parsed.modifier);
+      const mathFn = getMathFunction(config.parsed.modifier, Number(config.parsed.modifierOperand?.value));
       return readMessagePathItems(messages, config.parsed, mathFn);
     });
     this.#pendingDispatch.push(...(actions as UpdateDataAction[]));
@@ -312,7 +312,7 @@ function parseXPathItems(
   messages: Immutable<MessageEvent[]>,
   xParsedPath: Immutable<MessagePath>,
 ): ValueItem[] {
-  const mathFn = getMathFunction(xParsedPath.modifier);
+  const mathFn = getMathFunction(xParsedPath.modifier, Number(xParsedPath.modifierOperand?.value));
   return readMessagePathItems(messages, xParsedPath, mathFn);
 }
 
@@ -329,28 +329,16 @@ function readMessagePathItems(
 
     const items = simpleGetMessagePathDataItems(event, path);
     for (const item of items) {
-      // eslint-disable-next-line @lichtblick/strict-equality
-      if (item === null) {
-        out.push({ value: Number.NaN, originalValue: null, receiveTime: event.receiveTime });
-        continue;
-      }
-
-      if (mathFunction) {
-        const mathModified = mathFunction(item);
-        out.push({
-          value: mathModified,
-          originalValue: mathModified,
-          receiveTime: event.receiveTime,
-        });
-        continue;
-      }
-
-      const datum = resolveChartDatum(item);
+      const datum = resolveChartDatum(item, mathFunction);
       if (!datum) {
         continue;
       }
 
-      out.push({ value: datum.y, originalValue: datum.value, receiveTime: event.receiveTime });
+      out.push({
+        value: datum.y,
+        originalValue: datum.value,
+        receiveTime: event.receiveTime,
+      });
     }
   }
 

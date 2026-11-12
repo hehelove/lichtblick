@@ -26,6 +26,7 @@ import McapBundleAPI from "@lichtblick/suite-base/api/mcapBundle/McapBundleAPI";
 import AccountSettings from "@lichtblick/suite-base/components/AccountSettingsSidebar/AccountSettings";
 import { AlertsList } from "@lichtblick/suite-base/components/AlertList/AlertsList";
 import { AppBar } from "@lichtblick/suite-base/components/AppBar";
+import { makeCommandPaletteKeyDownHandler } from "@lichtblick/suite-base/components/CommandPalette/commands";
 import {
   DataSourceDialog,
   DataSourceDialogItem,
@@ -59,6 +60,7 @@ import { TopicList } from "@lichtblick/suite-base/components/TopicList";
 import VariablesList from "@lichtblick/suite-base/components/VariablesList";
 import { WorkspaceDialogs } from "@lichtblick/suite-base/components/WorkspaceDialogs";
 import { XsEvalEventsBridge } from "@lichtblick/suite-base/components/XsEvalEventsBridge";
+import { XsLocalEventsProvider } from "@lichtblick/suite-base/components/XsLocalEvents";
 import { AllowedFileExtensions } from "@lichtblick/suite-base/constants/allowedFileExtensions";
 import { useAppContext } from "@lichtblick/suite-base/context/AppContext";
 import {
@@ -93,6 +95,7 @@ import ICONS from "@lichtblick/suite-base/theme/icons";
 import { InjectedSidebarItem, Namespace, WorkspaceProps } from "@lichtblick/suite-base/types";
 import { parseAppURLState } from "@lichtblick/suite-base/util/appURLState";
 import useBroadcast from "@lichtblick/suite-base/util/broadcast/useBroadcast";
+import { keyboardEventHasModifier } from "@lichtblick/suite-base/util/formatKeyboardShortcut";
 import isDesktopApp from "@lichtblick/suite-base/util/isDesktopApp";
 
 import { useWorkspaceActions } from "./context/Workspace/useWorkspaceActions";
@@ -436,9 +439,6 @@ function WorkspaceContent(props: WorkspaceProps): React.JSX.Element {
     return items;
   }, [enableDebugMode, showEventsTab, PerformanceSidebarComponent]);
 
-  const keyboardEventHasModifier = (event: KeyboardEvent) =>
-    navigator.userAgent.includes("Mac") ? event.metaKey : event.ctrlKey;
-
   function AddPanel() {
     const addPanel = useAddPanel();
     const { openLayoutBrowser } = useWorkspaceActions();
@@ -480,6 +480,7 @@ function WorkspaceContent(props: WorkspaceProps): React.JSX.Element {
       "]": () => {
         sidebarActions.right.setOpen((oldValue) => !oldValue);
       },
+      k: makeCommandPaletteKeyDownHandler(dialogActions.commandPalette.open),
       o: (ev: KeyboardEvent) => {
         if (!keyboardEventHasModifier(ev)) {
           return;
@@ -494,7 +495,13 @@ function WorkspaceContent(props: WorkspaceProps): React.JSX.Element {
         });
       },
     };
-  }, [dialogActions.dataSource, dialogActions.openFile, sidebarActions.left, sidebarActions.right]);
+  }, [
+    dialogActions.commandPalette,
+    dialogActions.dataSource,
+    dialogActions.openFile,
+    sidebarActions.left,
+    sidebarActions.right,
+  ]);
 
   const targetUrlState = useMemo(() => {
     const deepLinks = props.deepLinks ?? [];
@@ -739,18 +746,21 @@ function WorkspaceContent(props: WorkspaceProps): React.JSX.Element {
             </Stack>
           </RemountOnValueChange>
         </Sidebars>
-        {play && pause && seek && (
-          <div style={{ flexShrink: 0 }} data-testid="playback-controls">
-            <PlaybackControls
-              play={play}
-              pause={pause}
-              seek={seek}
-              playUntil={playUntil}
-              isPlaying={isPlaying}
-              getTimeInfo={getTimeInfo}
-            />
-          </div>
-        )}
+        {/* xs：本地事件 createEvent 经 AppContext 提供给 PlaybackControls/CreateEventDialog。 */}
+        <XsLocalEventsProvider>
+          {play && pause && seek && (
+            <div style={{ flexShrink: 0 }} data-testid="playback-controls">
+              <PlaybackControls
+                play={play}
+                pause={pause}
+                seek={seek}
+                playUntil={playUntil}
+                isPlaying={isPlaying}
+                getTimeInfo={getTimeInfo}
+              />
+            </div>
+          )}
+        </XsLocalEventsProvider>
       </div>
       <WorkspaceDialogs />
     </PanelStateContextProvider>
@@ -771,6 +781,9 @@ export default function Workspace(props: WorkspaceProps): React.JSX.Element {
 
   const initialState: Pick<WorkspaceContextStore, "dialogs"> = {
     dialogs: {
+      commandPalette: {
+        open: false,
+      },
       dataSource: {
         activeDataSource: undefined,
         open: initialItem != undefined,

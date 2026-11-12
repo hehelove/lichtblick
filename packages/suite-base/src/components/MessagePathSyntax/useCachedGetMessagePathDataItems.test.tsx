@@ -714,6 +714,67 @@ describe("fillInGlobalVariablesInPath", () => {
     });
   });
 
+  it("fills in global variables and normalizes numbers in modifier operands", () => {
+    expect(
+      fillInGlobalVariablesInPath(
+        {
+          topicName: "/foo",
+          topicNameRepr: "/foo",
+          messagePath: [{ type: "name", name: "bar", repr: "bar" }],
+          modifier: "mul",
+          modifierOperand: { value: { variableName: "scale", startLoc: 0 }, repr: "$scale" },
+        },
+        { scale: 2 },
+      ),
+    ).toEqual({
+      topicName: "/foo",
+      topicNameRepr: "/foo",
+      messagePath: [{ name: "bar", type: "name", repr: "bar" }],
+      modifier: "mul",
+      modifierOperand: { value: 2, repr: "$scale" },
+    });
+
+    // BigInt operands are normalized to numbers.
+    expect(
+      fillInGlobalVariablesInPath(
+        {
+          topicName: "/foo",
+          topicNameRepr: "/foo",
+          messagePath: [],
+          modifier: "add",
+          modifierOperand: { value: 3n, repr: "3" },
+        },
+        {},
+      ),
+    ).toEqual({
+      topicName: "/foo",
+      topicNameRepr: "/foo",
+      messagePath: [],
+      modifier: "add",
+      modifierOperand: { value: 3, repr: "3" },
+    });
+
+    // Non-numeric variables resolve to undefined.
+    expect(
+      fillInGlobalVariablesInPath(
+        {
+          topicName: "/foo",
+          topicNameRepr: "/foo",
+          messagePath: [],
+          modifier: "mul",
+          modifierOperand: { value: { variableName: "scale", startLoc: 0 }, repr: "$scale" },
+        },
+        { scale: "blah" },
+      ),
+    ).toEqual({
+      topicName: "/foo",
+      topicNameRepr: "/foo",
+      messagePath: [],
+      modifier: "mul",
+      modifierOperand: { value: undefined, repr: "$scale" },
+    });
+  });
+
   // This test captures current behavior, but in the future we might want to add support for boolean values.
   it("does not fill in boolean values", () => {
     expect(

@@ -56,6 +56,16 @@ export function useSettingsTree(config: Config, services: string[] = []): Settin
             ],
             value: config.layout ?? defaultConfig.layout,
           },
+          timeoutMs: {
+            label: "Timeout (ms)",
+            input: "number",
+            value: config.timeoutMs,
+            placeholder: "No timeout",
+            error:
+              config.timeoutMs != undefined && config.timeoutMs <= 0
+                ? "Must be positive"
+                : undefined,
+          },
         },
       },
       button: {

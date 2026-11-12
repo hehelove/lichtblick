@@ -32,6 +32,15 @@ export enum AppSetting {
   SHOW_OPEN_DIALOG_ON_STARTUP = "ui.open-dialog-startup",
   ENABLE_UNIFIED_NAVIGATION = "ui.new-app-menu",
 
+  // Layout sync (desktop PAT / web baked default)
+  LAYOUT_SYNC_WORKSPACE = "layoutSync.workspace",
+  LAYOUT_SYNC_API_TOKEN = "layoutSync.apiToken",
+
+  // Local MCP server (desktop only)
+  MCP_ENABLED = "mcp.enabled",
+  MCP_TOKEN = "mcp.token",
+  MCP_PORT = "mcp.port",
+
   // Dev only
   ENABLE_LAYOUT_DEBUGGING = "enableLayoutDebugging",
   ENABLE_MEMORY_USE_INDICATOR = "dev.memory-use-indicator",

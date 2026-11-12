@@ -93,7 +93,7 @@ export class TimestampDatasetsBuilder implements IDatasetsBuilder {
         staticSeries,
         { didSeek, hasRangeSource: this.#hasRangeSource },
         (config) => {
-          const mathFn = getMathFunction(config.parsed.modifier);
+          const mathFn = getMathFunction(config.parsed.modifier, Number(config.parsed.modifierOperand?.value));
           return readMessagePathItems(
             msgEvents,
             config.parsed,
@@ -132,7 +132,7 @@ export class TimestampDatasetsBuilder implements IDatasetsBuilder {
 
     const staticSeries = this.#series.filter(({ config }) => !isDynamicSeries(config));
     const actions = buildFullSeriesActions(staticSeries, topic, options, (config) => {
-      const mathFn = getMathFunction(config.parsed.modifier);
+      const mathFn = getMathFunction(config.parsed.modifier, Number(config.parsed.modifierOperand?.value));
       return readMessagePathItems(
         messages,
         config.parsed,
@@ -269,6 +269,11 @@ function readMessagePathItems(
 
     const items = simpleGetMessagePathDataItems(event, path);
     for (const item of items) {
+      const datum = resolveChartDatum(item, mathFunction);
+      if (!datum) {
+        continue;
+      }
+
       const headerStamp = getTimestampForMessage(event.message);
       const timestamp = timestampMethod === "receiveTime" ? event.receiveTime : headerStamp;
       if (!timestamp) {
@@ -276,34 +281,6 @@ function readMessagePathItems(
       }
 
       const xValue = toSec(subtractTime(timestamp, startTime));
-      // eslint-disable-next-line @lichtblick/strict-equality
-      if (item === null) {
-        out.push({
-          x: xValue,
-          y: Number.NaN,
-          receiveTime: event.receiveTime,
-          headerStamp,
-          value: null,
-        });
-        continue;
-      }
-
-      if (mathFunction) {
-        const mathModified = mathFunction(item);
-        out.push({
-          x: xValue,
-          y: mathModified,
-          receiveTime: event.receiveTime,
-          headerStamp,
-          value: mathModified,
-        });
-        continue;
-      }
-
-      const datum = resolveChartDatum(item);
-      if (!datum) {
-        continue;
-      }
       out.push({
         x: xValue,
         y: datum.y,

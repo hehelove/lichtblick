@@ -6,7 +6,12 @@ import { renderHook } from "@testing-library/react";
 import GaugeBuilder from "@lichtblick/suite-base/testing/builders/GaugeBuilder";
 import { BasicBuilder } from "@lichtblick/test-builders";
 
-import { ColorMapConfig, ColorModeConfig, SettingsTreeNodesProps } from "./types";
+import {
+  ColorMapConfig,
+  ColorModeConfig,
+  GaugeStyleConfig,
+  SettingsTreeNodesProps,
+} from "./types";
 import { useSettingsTree } from "./useSettingsTree";
 
 jest.mock("react-i18next", () => ({
@@ -99,6 +104,43 @@ describe("useSettingsTree", () => {
       label: "reverse.label",
       input: "boolean",
       value: props.config.reverse,
+    });
+  });
+
+  it("should include style field with Dial and Bar options", () => {
+    const { props } = setup({
+      config: GaugeBuilder.config({ style: GaugeStyleConfig.DIAL }),
+    });
+
+    const { result } = renderHook(() => useSettingsTree(props));
+    const { general } = result.current;
+
+    expect(general.fields!.style).toEqual({
+      label: "style.label",
+      input: "select",
+      value: props.config.style,
+      options: [
+        { label: "style.options.dial", value: GaugeStyleConfig.DIAL },
+        { label: "style.options.bar", value: GaugeStyleConfig.BAR },
+      ],
+    });
+  });
+
+  it("should include reverseDirection field only when style is BAR", () => {
+    const dialProps = setup({
+      config: GaugeBuilder.config({ style: GaugeStyleConfig.DIAL }),
+    });
+    const dialResult = renderHook(() => useSettingsTree(dialProps.props));
+    expect(dialResult.result.current.general.fields!.reverseDirection).toBeUndefined();
+
+    const barProps = setup({
+      config: GaugeBuilder.config({ style: GaugeStyleConfig.BAR }),
+    });
+    const barResult = renderHook(() => useSettingsTree(barProps.props));
+    expect(barResult.result.current.general.fields!.reverseDirection).toEqual({
+      label: "reverseDirection.label",
+      input: "boolean",
+      value: barProps.props.config.reverseDirection,
     });
   });
 

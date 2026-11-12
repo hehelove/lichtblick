@@ -151,6 +151,8 @@ describe("CurrentLayoutProvider", () => {
   afterEach(() => {
     (console.warn as jest.Mock).mockClear();
     jest.clearAllMocks();
+    // window.location persists across tests within this file; reset any ?layoutId= deep link.
+    window.history.pushState({}, "", "/");
   });
 
   it("uses currentLayoutId from UserProfile to load from LayoutStorage", async () => {
@@ -441,6 +443,140 @@ describe("CurrentLayoutProvider", () => {
     expect(selectedLayout).toBeDefined();
     expect(selectedLayout).toBe("layout2");
     // A ?layout= override is session-only and must not be persisted to the user profile.
+    expect(mockUserProfile.setUserProfile).not.toHaveBeenCalled();
+  });
+
+  it("selects a layout through the layoutId URL parameter", async () => {
+    window.history.pushState({}, "", "http://localhost/?layoutId=layout2");
+    mockLayoutManager.getLayouts.mockImplementation(async () => {
+      return [
+        {
+          id: "layout1",
+          name: "LAYOUT 1",
+          data: { data: TEST_LAYOUT },
+          permission: "CREATOR_WRITE",
+        },
+        {
+          id: "layout2",
+          name: "LAYOUT 2",
+          data: { data: TEST_LAYOUT },
+          permission: "CREATOR_WRITE",
+        },
+      ];
+    });
+    mockLayoutManager.getLayout.mockImplementation(async (id: string) => {
+      return {
+        id,
+        name: "LAYOUT 2",
+        baseline: { data: TEST_LAYOUT, updatedAt: new Date(10).toISOString() },
+      };
+    });
+
+    const { result, all } = renderTest({
+      mockLayoutManager,
+      mockUserProfile,
+    });
+
+    await act(async () => {
+      await result.current.childMounted;
+    });
+
+    const selectedLayout = all.find((item) => item.layoutState.selectedLayout?.id)?.layoutState
+      .selectedLayout?.id;
+
+    expect(selectedLayout).toBeDefined();
+    expect(selectedLayout).toBe("layout2");
+    // A ?layoutId= deep link is session-only and must not be persisted to the user profile.
+    expect(mockUserProfile.setUserProfile).not.toHaveBeenCalled();
+  });
+
+  it("shows a warning and falls back to alphabetic order when the layoutId URL parameter is unknown", async () => {
+    window.history.pushState({}, "", "http://localhost/?layoutId=nonexistent");
+    mockLayoutManager.getLayouts.mockImplementation(async () => {
+      return [
+        {
+          id: "layout1",
+          name: "LAYOUT 1",
+          data: { data: TEST_LAYOUT },
+          permission: "CREATOR_WRITE",
+        },
+        {
+          id: "layout2",
+          name: "ABC Layout 2",
+          data: { data: TEST_LAYOUT },
+          permission: "CREATOR_WRITE",
+        },
+      ];
+    });
+    mockLayoutManager.getLayout.mockImplementation(async (id: string) => {
+      return {
+        id,
+        name: "Layout",
+        baseline: { data: TEST_LAYOUT, updatedAt: new Date(10).toISOString() },
+      };
+    });
+
+    const { result, all } = renderTest({
+      mockLayoutManager,
+      mockUserProfile,
+    });
+
+    await act(async () => {
+      await result.current.childMounted;
+    });
+
+    const selectedLayout = all.find((item) => item.layoutState.selectedLayout?.id)?.layoutState
+      .selectedLayout?.id;
+
+    expect(selectedLayout).toBe("layout2");
+
+    const { enqueueSnackbar } = useSnackbar();
+    expect(enqueueSnackbar).toHaveBeenCalledWith(
+      "The layout 'nonexistent' specified in the URL parameter does not exist.",
+      { variant: "warning" },
+    );
+  });
+
+  it("URL layoutId takes precedence over the profile currentLayoutId", async () => {
+    window.history.pushState({}, "", "http://localhost/?layoutId=layout3");
+    mockLayoutManager.getLayouts.mockImplementation(async () => {
+      return [
+        {
+          id: "layout1",
+          name: "LAYOUT 1",
+          data: { data: TEST_LAYOUT },
+          permission: "CREATOR_WRITE",
+        },
+        {
+          id: "layout3",
+          name: "LAYOUT 3",
+          data: { data: TEST_LAYOUT },
+          permission: "CREATOR_WRITE",
+        },
+      ];
+    });
+    mockLayoutManager.getLayout.mockImplementation(async (id: string) => {
+      return {
+        id,
+        name: "LAYOUT 3",
+        baseline: { data: TEST_LAYOUT, updatedAt: new Date(10).toISOString() },
+      };
+    });
+    mockUserProfile.getUserProfile.mockResolvedValue({ currentLayoutId: "layout1" });
+
+    const { result, all } = renderTest({
+      mockLayoutManager,
+      mockUserProfile,
+    });
+
+    await act(async () => {
+      await result.current.childMounted;
+    });
+
+    const selectedLayout = all.find((item) => item.layoutState.selectedLayout?.id)?.layoutState
+      .selectedLayout?.id;
+
+    expect(selectedLayout).toBe("layout3");
     expect(mockUserProfile.setUserProfile).not.toHaveBeenCalled();
   });
 

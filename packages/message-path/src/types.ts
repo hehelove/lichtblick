@@ -70,6 +70,15 @@ export type MessagePath = {
   topicNameRepr: string;
   messagePath: MessagePathPart[];
   modifier?: string;
+  /**
+   * Optional operand for operand-carrying modifiers, e.g. `.@mul(1e-9)` or `.@add($speed)`.
+   * `repr` preserves the user's spelling for round-tripping through stringifyMessagePath.
+   * Absent (undefined, not null) for plain modifiers like `.@derivative`.
+   */
+  modifierOperand?: {
+    value?: number | bigint | { variableName: string; startLoc: number };
+    repr: string;
+  };
 };
 
 // "Structure items" are a more useful version of `datatypes`. They can be

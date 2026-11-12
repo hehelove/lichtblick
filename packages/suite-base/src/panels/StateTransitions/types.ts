@@ -24,6 +24,8 @@ export type StateTransitionPath = {
 export type DynamicStateTransitionSeries = {
   identity: string;
   label: string;
+  // Element index for index-keyed rows (primitive arrays / objects without the label field).
+  sourceIndex?: number;
 };
 
 export type StateTransitionConfig = {
@@ -88,5 +90,10 @@ export type DynamicMessageDatasetsArgs = Omit<MessageDatasetArgs, "dynamicSeries
 };
 
 export type ValidQueriedDataValue = number | string | boolean | bigint;
+
+export type ValueAtTime = {
+  value: ValidQueriedDataValue;
+  constantName: string | undefined;
+};
 
 export type ImmutableDataset = Immutable<(MessageAndData[] | undefined)[]>;

@@ -7,14 +7,20 @@ import { useShallowMemo } from "@lichtblick/hooks";
 import { SettingsTreeNode } from "@lichtblick/suite";
 import { DATA_TYPES } from "@lichtblick/suite-base/panels/Gauge/constants";
 
-import { ColorMapConfig, ColorModeConfig, SettingsTreeNodesProps } from "./types";
+import {
+  ColorMapConfig,
+  ColorModeConfig,
+  GaugeStyleConfig,
+  SettingsTreeNodesProps,
+} from "./types";
 
 export function useSettingsTree({
   config,
   pathParseError,
   error,
 }: SettingsTreeNodesProps): Record<"general", SettingsTreeNode> {
-  const { colorMap, colorMode, gradient, maxValue, minValue, path, reverse } = config;
+  const { colorMap, colorMode, gradient, maxValue, minValue, path, reverse, reverseDirection, style } =
+    config;
   const { t } = useTranslation("gauge");
 
   const generalSettings = useMemo(
@@ -28,6 +34,22 @@ export function useSettingsTree({
           error: pathParseError,
           validTypes: DATA_TYPES,
         },
+        style: {
+          label: t("style.label"),
+          input: "select",
+          value: style,
+          options: [
+            { label: t("style.options.dial"), value: GaugeStyleConfig.DIAL },
+            { label: t("style.options.bar"), value: GaugeStyleConfig.BAR },
+          ],
+        },
+        ...(style === GaugeStyleConfig.BAR && {
+          reverseDirection: {
+            label: t("reverseDirection.label"),
+            input: "boolean",
+            value: reverseDirection,
+          },
+        }),
         minValue: {
           label: t("minValue.label"),
           input: "number",
@@ -76,7 +98,20 @@ export function useSettingsTree({
         },
       },
     }),
-    [error, t, path, minValue, maxValue, colorMode, colorMap, gradient, reverse, pathParseError],
+    [
+      error,
+      t,
+      path,
+      minValue,
+      maxValue,
+      colorMode,
+      colorMap,
+      gradient,
+      reverse,
+      reverseDirection,
+      style,
+      pathParseError,
+    ],
   );
 
   return useShallowMemo({

@@ -11,6 +11,7 @@ import {
   AppBarProps,
   AppSetting,
   IExtensionLoader,
+  CompareFilesDataSourceFactory,
   FoxgloveWebSocketDataSourceFactory,
   IDataSourceFactory,
   IdbExtensionLoader,
@@ -24,6 +25,7 @@ import {
   SharedRoot,
   UlogLocalDataSourceFactory,
 } from "@lichtblick/suite-base";
+import { resolveLayoutSyncWorkspace } from "@lichtblick/suite-base/api/layouts/workspace";
 import { APP_CONFIG } from "@lichtblick/suite-base/constants/config";
 import { AppParametersInput } from "@lichtblick/suite-base/context/AppParametersContext";
 
@@ -42,6 +44,7 @@ export function WebRoot(props: {
       new LocalStorageAppConfiguration({
         defaults: {
           [AppSetting.SHOW_DEBUG_PANELS]: isDevelopment,
+          [AppSetting.LAYOUT_SYNC_WORKSPACE]: "default",
         },
       }),
     [],
@@ -52,7 +55,7 @@ export function WebRoot(props: {
     new IdbExtensionLoader("local"),
   ];
   const url = new URL(globalThis.location.href);
-  const workspace = url.searchParams.get("workspace");
+  const workspace = resolveLayoutSyncWorkspace(url.searchParams.get("workspace"), appConfiguration);
 
   if (workspace && APP_CONFIG.apiUrl) {
     defaultExtensionLoaders.push(new RemoteExtensionLoader("org", workspace));
@@ -77,6 +80,7 @@ export function WebRoot(props: {
       new UlogLocalDataSourceFactory(),
       new SampleNuscenesDataSourceFactory(),
       new McapLocalDataSourceFactory(),
+      new CompareFilesDataSourceFactory(),
       new RemoteDataSourceFactory(),
     ];
 

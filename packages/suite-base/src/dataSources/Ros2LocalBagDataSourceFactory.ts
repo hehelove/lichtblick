@@ -14,6 +14,22 @@ import { IterablePlayer } from "@lichtblick/suite-base/players/IterablePlayer";
 import { WorkerSerializedIterableSource } from "@lichtblick/suite-base/players/IterablePlayer/WorkerSerializedIterableSource";
 import { Player } from "@lichtblick/suite-base/players/types";
 
+/** Builds the worker-backed ROS 2 Bag source shared by single/multi-file open and comparison mode. */
+export function buildRos2BagSource(files: File[]): WorkerSerializedIterableSource {
+  return new WorkerSerializedIterableSource({
+    initWorker: () => {
+      return new Worker(
+        // foxglove-depcheck-used: babel-plugin-transform-import-meta
+        new URL(
+          "@lichtblick/suite-base/players/IterablePlayer/rosdb3/RosDb3IterableSourceWorker.worker",
+          import.meta.url,
+        ),
+      );
+    },
+    initArgs: { files },
+  });
+}
+
 class Ros2LocalBagDataSourceFactory implements IDataSourceFactory {
   public id = "ros2-local-bagfile";
   public type: IDataSourceFactory["type"] = "file";
@@ -30,18 +46,7 @@ class Ros2LocalBagDataSourceFactory implements IDataSourceFactory {
       return;
     }
 
-    const source = new WorkerSerializedIterableSource({
-      initWorker: () => {
-        return new Worker(
-          // foxglove-depcheck-used: babel-plugin-transform-import-meta
-          new URL(
-            "@lichtblick/suite-base/players/IterablePlayer/rosdb3/RosDb3IterableSourceWorker.worker",
-            import.meta.url,
-          ),
-        );
-      },
-      initArgs: { files },
-    });
+    const source = buildRos2BagSource(files);
 
     return new IterablePlayer({
       metricsCollector: args.metricsCollector,

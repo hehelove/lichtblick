@@ -536,6 +536,7 @@ function PanelExtensionAdapter(
         const { byOutput: topicConvertersByOutput } = collateTopicConverters(messageConverters);
 
         const subscribePayloads = localSubs.flatMap((item): InternalSubscribePayload[] => {
+          // eslint-disable-next-line @typescript-eslint/no-deprecated -- bridging the deprecated preload field
           const preloadType = item.preload === true ? "full" : "partial";
 
           const outputConverter = topicConvertersByOutput.get(item.topic);
@@ -549,6 +550,7 @@ function PanelExtensionAdapter(
 
           // Preload requires full message history, so sampling is never allowed here.
           // Also, if the panel didn't request sampling, default to "needs all".
+          // eslint-disable-next-line @typescript-eslint/no-deprecated -- bridging the deprecated preload field
           if (item.preload === true || item.sampling?.mode !== "latest-per-render-tick") {
             return [{ topic: item.topic, preloadType }];
           }
@@ -693,20 +695,34 @@ function PanelExtensionAdapter(
       },
 
       /**
-       * EXPERIMENTAL: Subscribe to message ranges for efficient batch processing.
+       * Subscribe to receive the entire time range of messages for a given topic for the current data source.
        *
-       * This API is marked as "unstable" because it's still experimental and not fully functional.
-       * We're gradually testing and refining this feature to see how it performs in real-world scenarios.
+       * See {@link SubscribeMessageRangeArgs} for more information on behavior.
        *
-       * The API may change without notice as we gather feedback and improve the implementation.
-       * Use with caution in production environments.
+       * Note: This will not read messages for live sources, like foxglove_bridge, rosbridge, or ROS 1
+       * native connections. For those messages you will still need to use `context.subscribe()` and
+       * `watch("currentFrame")`.
        *
-       * Current limitations:
-       * - Performance characteristics may vary
-       * - Error handling is still being refined
-       * - API surface may change based on testing feedback
+       * @returns A function that will unsubscribe from the topic, cancel the active async iterator,
+       * and prevent {@link SubscribeMessageRangeArgs.onNewRangeIterator | onNewRangeIterator} from being called again.
        */
+      subscribeMessageRange(args) {
+        if (!isMounted()) {
+          return () => {};
+        }
+        return subscribeMessageRange(args);
+      },
+
+      /** @deprecated Renamed to `subscribeMessageRange`. Please use that method instead. */
       unstable_subscribeMessageRange(args) {
+        if (!isMounted()) {
+          return () => {};
+        }
+        return subscribeMessageRange(args);
+      },
+
+      /** @deprecated Renamed to `subscribeMessageRange`. Please use that method instead. */
+      UNSTABLE_subscribeMessageRange(args) {
         if (!isMounted()) {
           return () => {};
         }

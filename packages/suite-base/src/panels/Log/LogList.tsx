@@ -22,6 +22,7 @@ import { useLatest } from "react-use";
 import AutoSizer from "react-virtualized-auto-sizer";
 import { List, ListImperativeAPI, RowComponentProps } from "react-window";
 
+import { Time } from "@lichtblick/suite";
 import { useAppTimeFormat } from "@lichtblick/suite-base/hooks";
 import { NormalizedLogMessage } from "@lichtblick/suite-base/panels/Log/types";
 
@@ -31,6 +32,7 @@ import { DEFAULT_ROW_HEIGHT } from "./constants";
 
 export type LogListProps = {
   items: readonly NormalizedLogMessage[];
+  onSeek?: (stamp: Time) => void;
 };
 
 type ListItemData = {
@@ -40,10 +42,11 @@ type ListItemData = {
   heightVersion: number;
   /** Included so the Row effect re-fires when the container width changes. */
   resizedWidth: number | undefined;
+  onSeek?: (stamp: Time) => void;
 };
 
 function Row(props: RowComponentProps<ListItemData>): React.JSX.Element {
-  const { setRowHeight, index, style, items, resizedWidth } = props;
+  const { setRowHeight, index, style, items, resizedWidth, onSeek } = props;
   const { timeFormat, timeZone } = useAppTimeFormat();
   const ref = useRef<HTMLDivElement>(ReactNull);
 
@@ -57,7 +60,7 @@ function Row(props: RowComponentProps<ListItemData>): React.JSX.Element {
 
   return (
     <div style={{ ...style, height: "auto" }} ref={ref}>
-      <LogMessage value={item} timestampFormat={timeFormat} timeZone={timeZone} />
+      <LogMessage value={item} timestampFormat={timeFormat} timeZone={timeZone} onSeek={onSeek} />
     </div>
   );
 }
@@ -66,7 +69,7 @@ function Row(props: RowComponentProps<ListItemData>): React.JSX.Element {
  * List for showing large number of items, which are expected to be appended to the end regularly.
  * Automatically scrolls to the bottom unless you explicitly scroll up.
  */
-function LogList({ items }: LogListProps): React.JSX.Element {
+function LogList({ items, onSeek }: LogListProps): React.JSX.Element {
   const { classes } = useStyles();
 
   // Reference to the list item itself.
@@ -134,8 +137,9 @@ function LogList({ items }: LogListProps): React.JSX.Element {
       setRowHeight,
       heightVersion,
       resizedWidth,
+      onSeek,
     }),
-    [items, setRowHeight, heightVersion, resizedWidth],
+    [items, setRowHeight, heightVersion, resizedWidth, onSeek],
   );
 
   return (

@@ -23,6 +23,9 @@ import { migrateV0WorkspaceState } from "@lichtblick/suite-base/context/Workspac
 export function makeWorkspaceContextInitialState(): WorkspaceContextStore {
   return {
     dialogs: {
+      commandPalette: {
+        open: false,
+      },
       dataSource: {
         activeDataSource: undefined,
         item: undefined,

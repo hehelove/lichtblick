@@ -35,7 +35,6 @@ jest.mock("react-i18next", () => ({
 }));
 
 describe("NetworkStatusIndicator", () => {
-  const originalLocation = window.location;
   const originalURL = global.URL;
 
   beforeEach(() => {
@@ -44,8 +43,6 @@ describe("NetworkStatusIndicator", () => {
 
   afterEach(() => {
     jest.clearAllMocks();
-    delete (window as any).location;
-    (window as any).location = originalLocation;
     global.URL = originalURL;
   });
 

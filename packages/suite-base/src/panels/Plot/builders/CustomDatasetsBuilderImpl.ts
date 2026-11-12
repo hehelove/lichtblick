@@ -117,6 +117,7 @@ export class CustomDatasetsBuilderImpl {
       }
       const dataset: Dataset = {
         ...buildDatasetStyle(series.config),
+        // xs: fields buildDatasetStyle does not carry (right y-axis, dynamic-series identity)
         yAxisID: series.config.yAxisID ?? "y",
         label: series.config.subLabel,
         seriesIdentity: series.config.compositeKey,

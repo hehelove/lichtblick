@@ -26,9 +26,11 @@ import {
   Play20Regular,
   Previous20Filled,
   Previous20Regular,
+  Record20Regular,
 } from "@fluentui/react-icons";
 import { Tooltip } from "@mui/material";
 import { useCallback, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { Time, compare } from "@lichtblick/rostime";
 import { CreateEventDialog } from "@lichtblick/suite-base/components/CreateEventDialog";
@@ -46,7 +48,6 @@ import { useStyles } from "@lichtblick/suite-base/components/PlaybackControls/in
 import { useDirectionalSeek } from "@lichtblick/suite-base/components/PlaybackControls/useDirectionalSeek";
 import PlaybackSpeedControls from "@lichtblick/suite-base/components/PlaybackSpeedControls";
 import Stack from "@lichtblick/suite-base/components/Stack";
-import { useCurrentUser } from "@lichtblick/suite-base/context/BaseUserContext";
 import { EventsStore, useEvents } from "@lichtblick/suite-base/context/EventsContext";
 import {
   WorkspaceContextStore,
@@ -59,6 +60,8 @@ import BroadcastManager from "@lichtblick/suite-base/util/broadcast/BroadcastMan
 import PlaybackTimeDisplay from "./PlaybackTimeDisplay";
 import { RepeatAdapter } from "./RepeatAdapter";
 import Scrubber from "./Scrubber";
+import { VideoExportAdapter, useActiveVideoExportSession } from "./VideoExportAdapter";
+import { VideoExportDialog } from "./VideoExportDialog";
 
 const selectPresence = (ctx: MessagePipelineContext) => ctx.playerState.presence;
 const selectEventsSupported = (store: EventsStore) => store.eventsSupported;
@@ -84,9 +87,11 @@ export default function PlaybackControls({
   const presence = useMessagePipeline(selectPresence);
 
   const { classes, cx } = useStyles();
+  const { t } = useTranslation("videoExport");
   const repeat = useWorkspaceStore(selectPlaybackRepeat);
   const [createEventDialogOpen, setCreateEventDialogOpen] = useState(false);
-  const { currentUserType } = useCurrentUser();
+  const [videoExportDialogOpen, setVideoExportDialogOpen] = useState(false);
+  const videoExportSession = useActiveVideoExportSession();
   const eventsSupported = useEvents(selectEventsSupported);
 
   const {
@@ -150,6 +155,7 @@ export default function PlaybackControls({
   return (
     <>
       <RepeatAdapter play={play} seek={seek} repeatEnabled={repeat} />
+      <VideoExportAdapter />
       <KeyListener global keyDownHandlers={keyDownHandlers} />
       <div className={classes.root}>
         <div className={classes.scrubberWrapper}>
@@ -157,7 +163,8 @@ export default function PlaybackControls({
         </div>
         <Stack direction="row" alignItems="center" flex={1} gap={1}>
           <Stack direction="row" alignItems="center" flex={1} gap={0.5}>
-            {currentUserType !== "unauthenticated" && eventsSupported && (
+            {/* xs：本地/评测事件不再要求 authenticated，与 Workspace Events tab 放宽一致。 */}
+            {eventsSupported && (
               <HoverableIconButton
                 size="small"
                 title="Create event"
@@ -228,6 +235,15 @@ export default function PlaybackControls({
             <SyncInstanceToggle />
             <HoverableIconButton
               size="small"
+              title={t("buttonTitle")}
+              color={videoExportSession ? "primary" : "inherit"}
+              onClick={() => {
+                setVideoExportDialogOpen(true);
+              }}
+              icon={<Record20Regular />}
+            />
+            <HoverableIconButton
+              size="small"
               title="Loop playback"
               color={repeat ? "primary" : "inherit"}
               onClick={toggleRepeat}
@@ -238,6 +254,13 @@ export default function PlaybackControls({
         </Stack>
         {createEventDialogOpen && eventsSupported && (
           <CreateEventDialog onClose={toggleCreateEventDialog} />
+        )}
+        {videoExportDialogOpen && (
+          <VideoExportDialog
+            onClose={() => {
+              setVideoExportDialogOpen(false);
+            }}
+          />
         )}
       </div>
     </>

@@ -102,6 +102,15 @@ describe("datasetContainsArray", () => {
 });
 
 describe("getDynamicSeries", () => {
+  function msgWithValue(value: unknown): MessageAndData[] {
+    return [
+      {
+        messageEvent: MessageEventBuilder.messageEvent(),
+        queriedData: [{ path: "/states", value }],
+      },
+    ];
+  }
+
   it("expands object arrays in first-seen order with type-stable identities", () => {
     const dataset: ImmutableDataset = [
       [
@@ -148,6 +157,39 @@ describe("getDynamicSeries", () => {
     expect(getDynamicSeries(dataset, "label", "value")).toEqual([
       { identity: "string:valid", label: "valid" },
     ]);
+  });
+
+  it("expands primitive arrays to one row per index", () => {
+    const series = getDynamicSeries([msgWithValue([10, 20, 30])], "label", "value");
+    expect(series.map((s) => s.identity)).toEqual(["index:0", "index:1", "index:2"]);
+    expect(series.map((s) => s.label)).toEqual(["[0]", "[1]", "[2]"]);
+    expect(series.map((s) => s.sourceIndex)).toEqual([0, 1, 2]);
+  });
+
+  it("object arrays missing label fall back to index rows keyed by valueField", () => {
+    const series = getDynamicSeries([msgWithValue([{ value: 1 }, { value: 2 }])], "label", "value");
+    expect(series.map((s) => s.identity)).toEqual(["index:0", "index:1"]);
+  });
+
+  it("any valid label keeps the array label-keyed (all-or-nothing)", () => {
+    const series = getDynamicSeries(
+      [msgWithValue([{ label: "a", value: 1 }, { value: 2 }])],
+      "label",
+      "value",
+    );
+    expect(series.map((s) => s.identity)).toEqual(["string:a"]); // unlabeled entries are dropped as before
+  });
+
+  it("row count grows to the max array length across messages", () => {
+    const series = getDynamicSeries([msgWithValue([1]), msgWithValue([1, 2, 3])], "label", "value");
+    expect(series).toHaveLength(3);
+  });
+
+  it("index identity never collides with a numeric label", () => {
+    expect(getDynamicSeries([msgWithValue([{ label: 0, value: 9 }])], "label", "value")[0]!.identity).toBe(
+      "number:0",
+    );
+    expect(getDynamicSeries([msgWithValue([9])], "label", "value")[0]!.identity).toBe("index:0");
   });
 });
 

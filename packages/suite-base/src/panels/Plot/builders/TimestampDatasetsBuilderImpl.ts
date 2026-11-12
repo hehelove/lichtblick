@@ -90,6 +90,30 @@ function getDerivativeY(
   return (item.y - prevY) / (item.x - prevX);
 }
 
+function getDeltaY(
+  item: IndexedDatum,
+  prevX: number | undefined,
+  prevY: number | undefined,
+): number {
+  if (
+    prevX == undefined ||
+    prevY == undefined ||
+    Number.isNaN(item.x) ||
+    Number.isNaN(item.y)
+  ) {
+    return Number.NaN;
+  }
+  return item.y - prevY;
+}
+
+function getTimedeltaY(item: IndexedDatum, prevX: number | undefined): number {
+  // Unlike delta, timedelta differences timestamps (x, in seconds since startTime), not values.
+  if (prevX == undefined || Number.isNaN(item.x)) {
+    return Number.NaN;
+  }
+  return item.x - prevX;
+}
+
 export class TimestampDatasetsBuilderImpl {
   #seriesByKey = new Map<SeriesConfigKey, Series>();
 
@@ -102,6 +126,7 @@ export class TimestampDatasetsBuilderImpl {
       }
       const dataset: Dataset = {
         ...buildDatasetStyle(series.config),
+        // xs: fields buildDatasetStyle does not carry (right y-axis, dynamic-series identity)
         yAxisID: series.config.yAxisID ?? "y",
         label: series.config.subLabel,
         seriesIdentity: series.config.compositeKey,
@@ -264,21 +289,31 @@ export class TimestampDatasetsBuilderImpl {
     const allData: IndexedDatum[] = series.full.slice();
     allData.push(...series.current);
 
-    if (series.config.parsed.modifier !== "derivative") {
+    const modifier = series.config.parsed.modifier;
+    if (modifier !== "derivative" && modifier !== "delta" && modifier !== "timedelta") {
       return allData;
     }
+    const delta = modifier === "delta";
+    const timedelta = modifier === "timedelta";
 
     let prevX: number | undefined;
     let prevY: number | undefined;
     for (let i = 0; i < allData.length; ++i) {
       const item = allData[i]!;
       if (i > 0) {
-        const newY = getDerivativeY(item, prevX, prevY);
+        const newY = delta
+          ? getDeltaY(item, prevX, prevY)
+          : timedelta
+            ? getTimedeltaY(item, prevX)
+            : getDerivativeY(item, prevX, prevY);
         allData[i] = {
           ...item,
           y: newY,
           value: Number.isNaN(newY) ? null : newY,
         };
+      } else if (delta || timedelta) {
+        // The first datum has no previous value to diff against.
+        allData[i] = { ...item, y: Number.NaN, value: null };
       }
 
       if (Number.isNaN(item.x) || Number.isNaN(item.y)) {

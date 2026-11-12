@@ -41,6 +41,9 @@ export type RightSidebarItemKey = (typeof RightSidebarItemKeys)[number];
 
 export type WorkspaceContextStore = {
   dialogs: {
+    commandPalette: {
+      open: boolean;
+    };
     dataSource: {
       activeDataSource: undefined | IDataSourceFactory;
       item: undefined | DataSourceDialogItem;

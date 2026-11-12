@@ -36,6 +36,19 @@ export const webpackRendererConfig =
       version: params.packageJson.version,
     });
 
+    // The renderer bridge files import suite-base via the /src/ form (the nested renderer tsc
+    // project resolves that spelling through node_modules as external files, avoiding TS6059).
+    // makeConfig's alias maps the bare package name to <suite-base>/src, which would double the
+    // prefix for /src/ requests — add an earlier-match alias for the same target.
+    const alias = appWebpackConfig.resolve?.alias;
+    const suiteBaseSrc = !Array.isArray(alias) ? alias?.["@lichtblick/suite-base"] : undefined;
+    if (typeof suiteBaseSrc === "string" && !Array.isArray(alias)) {
+      appWebpackConfig.resolve!.alias = {
+        "@lichtblick/suite-base/src": suiteBaseSrc,
+        ...alias,
+      };
+    }
+
     const config: Configuration = {
       ...appWebpackConfig,
 

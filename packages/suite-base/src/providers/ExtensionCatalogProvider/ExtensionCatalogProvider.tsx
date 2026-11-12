@@ -11,6 +11,7 @@ import { StoreApi, createStore } from "zustand";
 
 import Logger from "@lichtblick/log";
 import { RegisterMessageConverterArgs } from "@lichtblick/suite";
+import { builtinMessageConverters } from "@lichtblick/suite-base/builtins/converters";
 import {
   ContributionPoints,
   ExtensionCatalog,
@@ -245,7 +246,9 @@ function createExtensionRegistryStore(
       const start = performance.now();
       const installedExtensions: ExtensionInfo[] = [];
       const contributionPoints: ContributionPoints = {
-        messageConverters: [],
+        // Built-in converters are seeded first so extension converters — appended as extensions
+        // load — win the namespace-based converter priority in collateTopicSchemaConversions.
+        messageConverters: [...builtinMessageConverters],
         panels: {},
         panelSettings: {},
         topicAliasFunctions: [],
@@ -335,7 +338,7 @@ function createExtensionRegistryStore(
       uninstallExtension,
       unMarkExtensionAsInstalled,
       installedExtensions: loaders.length === 0 ? [] : undefined,
-      installedMessageConverters: mockMessageConverters ?? [],
+      installedMessageConverters: mockMessageConverters ?? builtinMessageConverters,
       installedPanels: {},
       installedTopicAliasFunctions: [],
       installedCameraModels: new Map(),

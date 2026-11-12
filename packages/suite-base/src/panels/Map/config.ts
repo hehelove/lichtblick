@@ -5,6 +5,7 @@
 // License, v2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/
 
+import { TFunction } from "i18next";
 import * as _ from "lodash-es";
 
 import { filterMap } from "@lichtblick/den/collection";
@@ -49,6 +50,7 @@ function isGeoJSONSchema(schemaName: string) {
 export function buildSettingsTree(
   config: Config,
   eligibleTopics: Omit<Topic, "datatype">[],
+  t: TFunction<"map">,
 ): SettingsTreeNodes {
   const topics: SettingsTreeNodes = _.transform(
     eligibleTopics,
@@ -92,13 +94,15 @@ export function buildSettingsTree(
   const followTopicOptions = [{ label: "Off", value: "" }, ...eligibleFollowTopicOptions];
   const generalSettings: SettingsTreeFields = {
     layer: {
-      label: "Tile layer",
+      label: t("layer.label"),
       input: "select",
       value: config.layer,
       options: [
-        { label: "Map", value: "map" },
-        { label: "Satellite", value: "satellite" },
-        { label: "Custom", value: "custom" },
+        { label: t("layer.options.map"), value: "map" },
+        { label: t("layer.options.satellite"), value: "satellite" },
+        { label: t("layer.options.custom"), value: "custom" },
+        { label: t("layer.options.terrain"), value: "terrain" },
+        { label: t("layer.options.nautical"), value: "nautical" },
       ],
     },
   };

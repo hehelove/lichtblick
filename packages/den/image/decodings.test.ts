@@ -15,6 +15,7 @@ import {
   decodeFloat1c,
   decodeMono16,
   decodeMono8,
+  decodeRCCG12,
   decodeRGB8,
   decodeRGBA8,
   decodeUYVY,
@@ -31,6 +32,25 @@ function uint16LE(num: number) {
   const result = new Uint8Array(2);
   new DataView(result.buffer).setUint16(0, num, true);
   return result;
+}
+
+// Packs 12-bit sample values as MIPI RAW12 (little-endian, 2 pixels / 3 bytes).
+// An odd trailing pixel occupies 2 bytes: low 8 bits in the first byte, high 4
+// bits in the LOW nibble of the second byte.
+function pack12(vals: number[]): Uint8Array {
+  const bytes: number[] = [];
+  for (let i = 0; i < vals.length; i += 2) {
+    const a = vals[i]!;
+    const b = vals[i + 1];
+    bytes.push(
+      a & 0xff,
+      b == undefined ? (a >> 8) & 0x0f : (((a >> 8) & 0x0f) | ((b >> 8) << 4)),
+    );
+    if (b != undefined) {
+      bytes.push(b & 0xff);
+    }
+  }
+  return new Uint8Array(bytes);
 }
 
 describe("decodeBGR8", () => {
@@ -601,5 +621,62 @@ describe("decodeBayer*()", () => {
         decodeBayerRGGB8(new Uint8Array([]), width, height, step + 1, new Uint8ClampedArray([]));
       }).not.toThrow();
     });
+  });
+});
+
+describe("decodeRCCG12", () => {
+  it("demosaics R/C/C/G quadrants with the default CCM", () => {
+    const out = new Uint8ClampedArray(2 * 2 * 4);
+    decodeRCCG12(pack12([0xfff, 0x800, 0x400, 0x001]), 2, 2, 3, out);
+    const px = (i: number) => [out[i * 4]!, out[i * 4 + 1]!, out[i * 4 + 2]!]; // R,G,B
+    for (let i = 0; i < 4; i++) {
+      expect(px(i)[0]).toBe(255); // R channel = R sample 0xFFF>>4
+      expect(px(i)[2]).toBe(128); // B channel = Clear sample 0x800
+      expect(px(i)[1]).toBe(0); // G channel = G sample 0x001
+    }
+  });
+
+  it("applies a custom 9-entry CCM", () => {
+    const out = new Uint8ClampedArray(2 * 2 * 4);
+    // Cyclic permutation: R_out=Clear, G_out=G, B_out=R
+    decodeRCCG12(pack12([0xfff, 0x800, 0x400, 0x001]), 2, 2, 3, out, {
+      colorCorrection: [0, 1, 0, 0, 0, 1, 1, 0, 0],
+    });
+    const px = (i: number) => [out[i * 4]!, out[i * 4 + 1]!, out[i * 4 + 2]!];
+    for (let i = 0; i < 4; i++) {
+      expect(px(i)[0]).toBe(128); // R_out = Clear sample
+      expect(px(i)[1]).toBe(0); // G_out = G sample
+      expect(px(i)[2]).toBe(255); // B_out = R sample
+    }
+  });
+
+  it("unpacks the odd-width trailing pixel", () => {
+    const out = new Uint8ClampedArray(3 * 1 * 4);
+    decodeRCCG12(pack12([0xabc, 0x123, 0x456]), 3, 1, 5, out);
+    // Region 0 (cols 0-1): R=0xABC, Clear=0x123; no second row so G falls back to the
+    // Clear sample. Region 1 (col 2, trailing): clamped to its own sample for all channels.
+    expect(Array.from(out)).toEqual([
+      172, 18, 18, 255, //
+      172, 18, 18, 255, //
+      69, 69, 69, 255, //
+    ]);
+  });
+
+  it("rejects invalid row step", () => {
+    const out = new Uint8ClampedArray(2 * 4);
+    expect(() => {
+      decodeRCCG12(pack12([0, 0]), 2, 1, 2, out);
+    }).toThrowErrorMatchingInlineSnapshot(
+      `"rccg12 image row step (2) must be at least ceil(width*1.5) (3)"`,
+    );
+  });
+
+  it("rejects data shorter than step*height", () => {
+    const out = new Uint8ClampedArray(2 * 4);
+    expect(() => {
+      decodeRCCG12(pack12([0, 0]), 2, 2, 3, out);
+    }).toThrowErrorMatchingInlineSnapshot(
+      `"rccg12 image data length (3) must be at least step*height (6)"`,
+    );
   });
 });

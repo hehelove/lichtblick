@@ -47,6 +47,42 @@ export function dynamicSeriesIdentity(value: ValidQueriedDataValue): string {
   return `${typeof value}:${String(value)}`;
 }
 
+// Index-keyed rows use a prefix outside dynamicSeriesIdentity's `${typeof}:${value}` grammar
+// (typeof is never "index"), so a numeric label 0 ("number:0") can never collide with "index:0".
+export const DYNAMIC_INDEX_PREFIX = "index:";
+
+export function dynamicIndexIdentity(index: number): string {
+  return `${DYNAMIC_INDEX_PREFIX}${index}`;
+}
+
+/** True when an identity names an index-keyed row produced by dynamicIndexIdentity. */
+export function isIndexIdentity(identity: string): boolean {
+  return identity.startsWith(DYNAMIC_INDEX_PREFIX);
+}
+
+/** An array is label-keyed when any object entry carries valid label and value primitives. */
+export function isLabelKeyedArray(
+  array: unknown[],
+  labelField: string,
+  valueField: string,
+): boolean {
+  return array.some(
+    (entry) =>
+      typeof entry === "object" &&
+      entry != undefined &&
+      isDynamicFieldValue((entry as Record<string, unknown>)[labelField]) &&
+      isDynamicFieldValue((entry as Record<string, unknown>)[valueField]),
+  );
+}
+
+/** Value of an index-keyed element: primitives are the value themselves, objects read valueField. */
+export function dynamicIndexValue(entry: unknown, valueField: string): unknown {
+  if (typeof entry === "object" && entry != undefined) {
+    return (entry as Record<string, unknown>)[valueField];
+  }
+  return entry;
+}
+
 export function getDynamicFields(path: Readonly<StateTransitionPath>): {
   labelField: string;
   valueField: string;
@@ -63,6 +99,7 @@ export function getDynamicSeries(
   valueField: string,
 ): DynamicStateTransitionSeries[] {
   const result = new Map<string, DynamicStateTransitionSeries>();
+  let maxIndex = -1;
 
   for (const messages of dataset) {
     for (const message of messages ?? []) {
@@ -71,6 +108,13 @@ export function getDynamicSeries(
       }
       const array = message.queriedData[0]?.value;
       if (!Array.isArray(array)) {
+        continue;
+      }
+      // All-or-nothing per array: a single valid label+value entry keeps the whole array
+      // label-keyed (unlabeled entries dropped as before); otherwise every element becomes
+      // one index-keyed row.
+      if (!isLabelKeyedArray(array, labelField, valueField)) {
+        maxIndex = Math.max(maxIndex, array.length - 1);
         continue;
       }
       for (const entry of array) {
@@ -88,6 +132,11 @@ export function getDynamicSeries(
         }
       }
     }
+  }
+  // Index rows cover the longest index-fallback array seen across all messages.
+  for (let index = 0; index <= maxIndex; index++) {
+    const identity = dynamicIndexIdentity(index);
+    result.set(identity, { identity, label: `[${index}]`, sourceIndex: index });
   }
   return [...result.values()];
 }

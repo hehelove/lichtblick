@@ -35,6 +35,7 @@ export function buildDatasetStyle(config: Immutable<SeriesItem>): Omit<Dataset, 
     pointHoverRadius: 3,
     pointBackgroundColor: showLine ? contrastColor : color,
     pointBorderColor: "transparent",
+    ...(config.stepped == undefined ? {} : { stepped: config.stepped }),
   };
 }
 
@@ -93,6 +94,7 @@ export function setSeries(
     existingSeries.dataset = {
       ...existingSeries.dataset,
       ...buildDatasetStyle(item),
+      // xs: fields buildDatasetStyle does not carry (right y-axis, dynamic-series identity)
       yAxisID: item.yAxisID ?? "y",
       label: item.subLabel,
       seriesIdentity: item.compositeKey,

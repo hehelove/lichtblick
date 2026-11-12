@@ -247,6 +247,8 @@ export interface IRenderer extends EventEmitter<RendererEvents> {
   readonly gl: THREE.WebGLRenderer;
   readonly testOptions: TestOptions;
   customCameraModels: CameraModelsMap;
+  /** topic name -> 9-entry row-major rccg12 color-correction matrix (from MCAP metadata). */
+  colorCorrections: Map<string, ReadonlyArray<number>>;
   maxLod: DetailLevel;
   config: Immutable<RendererConfig>;
   settings: SettingsManager;
@@ -372,6 +374,8 @@ export interface IRenderer extends EventEmitter<RendererEvents> {
   setCameraState(cameraState: CameraState): void;
 
   setCustomCameraModels(newCameraModels: CameraModelsMap): void;
+
+  setColorCorrections(newColorCorrections: Map<string, ReadonlyArray<number>>): void;
 
   getCameraState(): CameraState | undefined;
 
